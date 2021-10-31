@@ -1,0 +1,1 @@
+from qtrangeslider import QRangeSlider
