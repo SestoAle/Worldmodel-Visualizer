@@ -8,6 +8,7 @@ import seaborn as sns
 import os
 from PyQt5.Qt import QStandardItemModel, QStandardItem
 from qtrangeslider import QRangeSlider
+import tensorflow as tf
 
 sns.set_theme(style="dark")
 
@@ -564,7 +565,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.loading.visible = False
 
     def create_agent(self, starting_position=(255, 255, 0)):
-        starting_position = starting_position.astype(np.int)
+        starting_position = starting_position.astype(int)
         if self.agent == None:
             Cube = scene.visuals.create_visual_node(visuals.CubeVisual)
             self.agent = Cube(parent=self.view.scene, color='white', size=2)
@@ -612,7 +613,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         to_move[0] = (((to_move[0] + 1) / 2) * 500)
         to_move[1] = (((to_move[1] + 1) / 2) * 500)
         to_move[2] = (((to_move[2] + 1) / 2) * 60)
-        to_move = to_move.astype(np.int)
+        to_move = to_move.astype(int)
         current_tr = self.agent.transform.translate
         if np.linalg.norm(to_move - current_tr[:3]) < 0.05 or np.linalg.norm(self.movement_vector) < 0.05:
             self.animation_index += 1
