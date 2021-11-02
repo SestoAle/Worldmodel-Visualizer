@@ -86,7 +86,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.loading = None
         self.cluster_size = 20
         self.smooth_window = 5
-        self.trajectory_visualizer = False
+        self.trajectory_visualizer = True
         self.heatmap_in_time_discr = 500
 
         self.tm = 0
@@ -491,8 +491,14 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             h.visible = False
         del self.heatmap_in_time[:]
         self.heatmap_in_time = []
-        min_perc = np.percentile(self.world_model[:, 3], 2)
-        max_perc = np.percentile(self.world_model[:, 3], 98)
+
+        if self.model_name == 'play_2_500_2':
+            min_perc = np.percentile(self.world_model[:, 3], 2)
+            max_perc = np.percentile(self.world_model[:, 3], 98)
+        else:
+            min_perc = np.percentile(self.world_model[:, 3], 5)
+            max_perc = np.percentile(self.world_model[:, 3], 95)
+
         tmp_buffer = dict()
         for buffer in self.pos_buffers_in_time[tm:]:
             world_model = []
@@ -526,14 +532,17 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                              edge_color=colors,
                              scaling=True)
 
-            print(world_model[-1])
             heatmap.visible = False
             self.heatmap_in_time.append(heatmap)
 
 
-    def plot_3d_map(self, world_model, color_index=3, percentile=98,
+    def plot_3d_map(self, world_model, color_index=3, percentile=95,
                     colors_gradient=[(150, 0, 0), (255, 255, 0), (255, 255, 255)], set_map=True):
         world_model_array = deepcopy(np.asarray(world_model))
+
+        if self.model_name == 'play_2_500_2':
+            percentile = 98
+
         world_model_array[:, color_index] = np.clip(world_model_array[:, color_index],
                                                     np.percentile(world_model_array[:, 3], 100 - percentile),
                                                     np.percentile(world_model_array[:, 3], percentile))
@@ -573,6 +582,9 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
     def plot_3D_alpha_map(self, world_model, alpha=0):
 
+        for h in self.heatmap_in_time:
+            h.visible = False
+
         self.heatmap.visible = False
         self.plot_3d_map(world_model, color_index=alpha + 3)
 
@@ -580,7 +592,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
     def plot_3d_map_in_time(self, world_model_in_time):
         return
         min_perc = np.percentile(np.asarray(world_model_in_time[-1])[:, 3], 2)
-        max_perc = np.percentile(np.asarray(world_model_in_time[-1])[:, 3], 98)
+        max_perc = np.percentile(np.asarray(world_model_in_time[-1])[:, 3], 95)
         for world_model in world_model_in_time:
             world_model = np.asarray(world_model)
             world_model[:, 3] = np.clip(world_model[:, 3], min_perc,
@@ -720,12 +732,12 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             # goal_area_width = 44
 
             # Goal Area 2
-            desired_point_y = 21
-            goal_area_x = 22
-            goal_area_z = 461
-            goal_area_y = 21
-            goal_area_height = 39
-            goal_area_width = 66
+            # desired_point_y = 21
+            # goal_area_x = 22
+            # goal_area_z = 461
+            # goal_area_y = 21
+            # goal_area_height = 39
+            # goal_area_width = 66
 
             # desired_point_y = 10
             # goal_area_x = 95
@@ -750,13 +762,12 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             # goal_area_width = 44
 
             # Goal Area 4
-            #
-            # desired_point_y = 1
-            # goal_area_x = 442
-            # goal_area_z = 38
-            # goal_area_y = 1
-            # goal_area_height = 65
-            # goal_area_width = 46
+            desired_point_y = 1
+            goal_area_x = 442
+            goal_area_z = 38
+            goal_area_y = 1
+            goal_area_height = 65
+            goal_area_width = 46
 
             # desired_point_y = 21
             # goal_area_x = 454
@@ -1043,7 +1054,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         tree_dict = {
             'cluster_trajs': {},
             'sub_trajs': {},
-            'sub_latents': {}
+            'sub_latents': {},
+            'sub_actions': {}
         }
         count = 0
         for i, centroid_idx in enumerate(cluster_indices):
@@ -1051,13 +1063,17 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             tree_dict['cluster_trajs']['cl_{}'.format(i)] = traj_centroid
             tree_dict['sub_trajs']['cl_{}'.format(i)] = []
             tree_dict['sub_latents']['cl_{}'.format(i)] = []
+            tree_dict['sub_actions']['cl_{}'.format(i)] = []
             if len(self.cluster_labels > 0):
                 cluster_label = self.cluster_labels[centroid_idx]
                 sub_traj_idxs = np.where(self.cluster_labels == cluster_label)
-                for sub_traj, sub_latent in zip(traj_to_observe[sub_traj_idxs], all_normalized_im_rews[sub_traj_idxs]):
+                for sub_traj, sub_latent, sub_actions in zip(traj_to_observe[sub_traj_idxs],
+                                                             all_normalized_im_rews[sub_traj_idxs],
+                                                             acts_to_observe[sub_traj_idxs]):
                     count += 1
                     tree_dict['sub_trajs']['cl_{}'.format(i)].append(sub_traj)
                     tree_dict['sub_latents']['cl_{}'.format(i)].append(sub_latent)
+                    tree_dict['sub_actions']['cl_{}'.format(i)].append(sub_actions)
 
         self.traj_list_signal.emit(tree_dict)
 
@@ -1163,12 +1179,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         pos_buffers_in_time, pos_buffer_is_grounded = self.load_precomputed_time_models(model_name)
         unfiltered_trajs, unfiltered_actions, unfiltered_moti = self.load_unfiltered_trajs(model_name)
 
-        self.unfreeze()
-        self.world_model = world_model
-        self.buffer_alpha = buffer_alpha
-        self.pos_buffers_in_time = pos_buffers_in_time
-        self.pos_buffer_is_grounded = pos_buffer_is_grounded
-        self.freeze()
         trajectories = None
         actions = None
 
@@ -1186,6 +1196,14 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             unfiltered_trajs = None
             unfiltered_moti = None
+
+        self.unfreeze()
+        self.world_model = world_model
+        self.buffer_alpha = buffer_alpha
+        self.pos_buffers_in_time = pos_buffers_in_time
+        self.pos_buffer_is_grounded = pos_buffer_is_grounded
+        self.model_name = model_name
+        self.freeze()
 
         self.in_time_signal.emit(len(world_model_in_time))
         self.plot_3d_map(world_model)
@@ -1650,8 +1668,8 @@ class WorldModelApplication(QDialog):
             self.canvas.print_3d_traj(self.trajTreeModel.itemFromIndex(index).data()[0], tmp_line=True,
                                       im_rews=self.trajTreeModel.itemFromIndex(index).data()[1],
                                       color=self.canvas.colors[index.parent().row()])
-            self.canvas.plot_traj_data(self.trajTreeModel.itemFromIndex(index).data()[1], None)
             self.canvas.blockSignals(False)
+            self.canvas.plot_traj_data(self.trajTreeModel.itemFromIndex(index).data()[1], self.trajTreeModel.itemFromIndex(index).data()[2])
             self.trajTreeView.blockSignals(False)
 
     def tree_view_selected(self, item):
@@ -1670,10 +1688,11 @@ class WorldModelApplication(QDialog):
         for i, traj in enumerate(treeDict['sub_trajs'].keys()):
             cl_item = QStandardItem('Cluster {}'.format(i))
             cl_item.setEditable(False)
-            for j, sub_traj, sub_latent in zip(range(len(treeDict['sub_trajs'][traj])),
-                                               treeDict['sub_trajs'][traj], treeDict['sub_latents'][traj]):
+            for j, sub_traj, sub_latent, sub_actions in zip(range(len(treeDict['sub_trajs'][traj])),
+                                                            treeDict['sub_trajs'][traj], treeDict['sub_latents'][traj],
+                                                            treeDict['sub_actions'][traj]):
                 sub_item = QStandardItem('Traj {}'.format(j))
-                sub_item.setData([sub_traj, sub_latent])
+                sub_item.setData([sub_traj, sub_latent, sub_actions])
                 sub_item.setEditable(False)
                 cl_item.appendRow(sub_item)
             self.treeRootNode.appendRow(cl_item)
@@ -1700,12 +1719,15 @@ class WorldModelApplication(QDialog):
             self.actionPlotWidget.show_data(np.arange(len(actions)), actions)
 
     def alpha_name_changed(self, value):
-        if value=='all':
+        if value == 'all':
             value = 0
             self.timeSlider.setEnabled(True)
             self.timeSlider.blockSignals(True)
+            self.doubleTimeSlider.blockSignals(True)
             self.timeSlider.setValue(self.timeSlider.maximum())
+            self.doubleTimeSlider.setValue([self.doubleTimeSlider.value()[0], self.doubleTimeSlider.maximum()])
             self.timeSlider.blockSignals(False)
+            self.doubleTimeSlider.blockSignals(False)
         else:
             self.timeSlider.setEnabled(False)
             value = int(float(value) * 10) + 1
@@ -1721,6 +1743,8 @@ class WorldModelApplication(QDialog):
         self.timeLabel.setText(self.timeLabelText.format(value))
 
     def time_slider_released(self):
+        if self.canvas.heatmap is None:
+            return
         values = self.doubleTimeSlider.value()
         tm = values[0]
         tn = values[1]
