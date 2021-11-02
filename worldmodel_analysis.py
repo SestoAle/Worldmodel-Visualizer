@@ -86,8 +86,11 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.loading = None
         self.cluster_size = 20
         self.smooth_window = 5
-        self.trajectory_visualizer = True
+        self.trajectory_visualizer = False
         self.heatmap_in_time_discr = 500
+
+        self.tm = 0
+        self.tn = 0
 
         self.mean_moti_thr = 0.04
         self.sum_moti_thr = 16
@@ -404,6 +407,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         world_model_in_time = []
         pos_buffer = dict()
         rnd_buffer = dict()
+        pos_buffer_in_time = dict()
+        pos_buffers_in_time = []
         pos_buffer_is_grounded = dict()
         pos_buffer_alpha = dict()
         count = 0
@@ -431,8 +436,15 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                     alphas[int(state[-2] * 10)] = 1
                     pos_buffer_alpha[pos_key] = alphas
 
+                if pos_key in pos_buffer_in_time.keys():
+                    pos_buffer_in_time[pos_key] += 1
+                else:
+                    pos_buffer_in_time[pos_key] = 1
+
             if count % self.heatmap_in_time_discr == 0:
                 world_model_t = []
+                pos_buffers_in_time.append(pos_buffer_in_time)
+                pos_buffer_in_time = dict()
                 for k in pos_buffer.keys():
                     k_value = list(map(float, k.split(" ")))
                     if pos_buffer_is_grounded[k] == 1:
@@ -472,7 +484,52 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         #         if pos_buffer_is_grounded[k] == 1:
         #             rnd_heatmap.append(list(s) + [v])
 
-        return pos_buffer, pos_buffer_alpha, world_model, world_model_in_time
+        return pos_buffer, pos_buffer_alpha, world_model, world_model_in_time, pos_buffers_in_time, pos_buffer_is_grounded
+
+    def heatmap_in_time_given_tm(self, tm):
+        for h in self.heatmap_in_time:
+            h.visible = False
+        del self.heatmap_in_time[:]
+        self.heatmap_in_time = []
+        min_perc = np.percentile(self.world_model[:, 3], 2)
+        max_perc = np.percentile(self.world_model[:, 3], 98)
+        tmp_buffer = dict()
+        for buffer in self.pos_buffers_in_time[tm:]:
+            world_model = []
+            for k in buffer.keys():
+                if self.pos_buffer_is_grounded[k] == 1:
+                    heat = buffer[k]
+                    if k in tmp_buffer.keys():
+                        tmp_buffer[k] += heat
+                    else:
+                        tmp_buffer[k] = heat
+            for tmp_k in tmp_buffer.keys():
+                k_value = list(map(float, tmp_k.split(" ")))
+                heat = tmp_buffer[tmp_k]
+                world_model.append(k_value[:3] + [heat])
+
+            world_model = np.asarray(world_model)
+            world_model[:, 3] = np.clip(world_model[:, 3], min_perc, max_perc)
+
+            min_value = np.min(world_model[:, 3])
+            max_value = np.max(world_model[:, 3])
+
+            colors = []
+            for c in world_model[:, 3]:
+                colors.append(self.convert_to_rgb(min_value, max_value, c))
+            colors = np.asarray(colors)
+
+            Scatter3D = scene.visuals.create_visual_node(visuals.MarkersVisual)
+            heatmap = Scatter3D(parent=view.scene)
+            heatmap.set_gl_state('additive', blend=True, depth_test=True)
+            heatmap.set_data(world_model[:, :3], face_color=colors, symbol='o', size=0.7, edge_width=0,
+                             edge_color=colors,
+                             scaling=True)
+
+            print(world_model[-1])
+            heatmap.visible = False
+            self.heatmap_in_time.append(heatmap)
+
 
     def plot_3d_map(self, world_model, color_index=3, percentile=98,
                     colors_gradient=[(150, 0, 0), (255, 255, 0), (255, 255, 255)], set_map=True):
@@ -483,6 +540,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
         min_value = np.min(world_model_array[:, color_index])
         max_value = np.max(world_model_array[:, color_index])
+
         print(min_value)
         print(max_value)
 
@@ -545,17 +603,20 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             heatmap.visible = False
             self.heatmap_in_time.append(heatmap)
 
-
     def show_heatmap_in_time(self, index):
-        self.heatmap.visible = False
-        self.covermap.visible = False
-        for h in self.heatmap_in_time:
-            h.visible = False
-
-        if index == len(self.heatmap_in_time):
-            self.heatmap.visible = True
-            self.heatmap_signal.emit(True)
-        else:
+        if self.heatmap is not None:
+            self.heatmap.visible = False
+            self.covermap.visible = False
+            for h in self.heatmap_in_time:
+                h.visible = False
+            index = np.clip(index, 0, len(self.heatmap_in_time) - 1)
+            print(index)
+            print(len(self.heatmap_in_time))
+            print(self.heatmap.visible)
+            # if index == len(self.heatmap_in_time):
+            #     self.heatmap.visible = True
+            #     self.heatmap_signal.emit(True)
+            # else:
             self.heatmap_in_time[index].visible = True
 
     def start_loading(self):
@@ -627,7 +688,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             to_move[0] = (((to_move[0] + 1) / 2) * 500)
             to_move[1] = (((to_move[1] + 1) / 2) * 500)
             to_move[2] = (((to_move[2] + 1) / 2) * 60)
-            to_move = to_move.astype(np.int)
+            to_move = to_move.astype(int)
             self.movement_vector = to_move - current_tr[:3]
             self.movement_vector = self.movement_vector / self.agent_speed
         current_tr[0] += self.movement_vector[0]
@@ -1023,6 +1084,17 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             print(e)
             return None, None, None, None, None
 
+    def load_precomputed_time_models(self, model_name, folder='arrays'):
+        try:
+            with open('{}/{}/{}_buffer_in_time.pickle'.format(folder, model_name, model_name), 'rb') as f:
+                buffer_in_time = pickle.load(f)
+            with open('{}/{}/{}_buffer_is_grounded.pickle'.format(folder, model_name, model_name), 'rb') as f:
+                buffer_is_grounded = pickle.load(f)
+            return buffer_in_time, buffer_is_grounded
+        except Exception as e:
+            print(e)
+            return None, None
+
     def save_precomputed_models(self, model_name, buffer, buffer_alpha, world_model, stats, world_model_in_time=None,
                                 folder='arrays'):
         with open('{}/{}/{}_buffer.pickle'.format(folder, model_name, model_name), 'wb') as f:
@@ -1035,6 +1107,12 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             np.save(f, world_model_in_time)
         with open('{}/{}/{}_stats.pickle'.format(folder, model_name, model_name), 'wb') as f:
             pickle.dump(stats, f)
+
+    def save_precomputed_time_models(self, model_name, buffer_in_time, is_grounded, folder='arrays'):
+        with open('{}/{}/{}_buffer_in_time.pickle'.format(folder, model_name, model_name), 'wb') as f:
+            pickle.dump(buffer_in_time, f)
+        with open('{}/{}/{}_buffer_is_grounded.pickle'.format(folder, model_name, model_name), 'wb') as f:
+            pickle.dump(is_grounded, f)
 
     def load_unfiltered_trajs(self, model_name, folder='arrays'):
         try:
@@ -1082,11 +1160,14 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         motivation = self.load_motivation(model_name)
 
         buffer, buffer_alpha, world_model, stats, world_model_in_time = self.load_precomputed_models(model_name)
+        pos_buffers_in_time, pos_buffer_is_grounded = self.load_precomputed_time_models(model_name)
         unfiltered_trajs, unfiltered_actions, unfiltered_moti = self.load_unfiltered_trajs(model_name)
 
         self.unfreeze()
         self.world_model = world_model
         self.buffer_alpha = buffer_alpha
+        self.pos_buffers_in_time = pos_buffers_in_time
+        self.pos_buffer_is_grounded = pos_buffer_is_grounded
         self.freeze()
         trajectories = None
         actions = None
@@ -1095,11 +1176,13 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             trajectories, actions = self.load_data_from_disk(model_name)
 
-            buffer, buffer_alpha, world_model, world_model_in_time = self.trajectories_to_pos_buffer(trajectories, rnd=motivation)
+            buffer, buffer_alpha, world_model, world_model_in_time, pos_buffers_in_time, pos_buffer_is_grounded\
+                = self.trajectories_to_pos_buffer(trajectories, rnd=motivation)
             world_model = np.asarray(world_model)
             stats = dict(episodes=len(trajectories))
 
             self.save_precomputed_models(model_name, buffer, buffer_alpha, world_model, stats, world_model_in_time)
+            self.save_precomputed_time_models(model_name, pos_buffers_in_time, pos_buffer_is_grounded)
 
             unfiltered_trajs = None
             unfiltered_moti = None
@@ -1107,6 +1190,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.in_time_signal.emit(len(world_model_in_time))
         self.plot_3d_map(world_model)
         self.plot_3d_map_in_time(world_model_in_time)
+        self.heatmap_in_time_given_tm(0)
 
         if self.trajectory_visualizer:
 
@@ -1245,8 +1329,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
     def savitzky_golay(self, y, window_size, order, deriv=0, rate=1):
         try:
-            window_size = np.abs(np.int(window_size))
-            order = np.abs(np.int(order))
+            window_size = np.abs(int(window_size))
+            order = np.abs(int(order))
         except ValueError as msg:
             raise ValueError("window_size and order have to be of type int")
         if window_size % 2 != 1 or window_size < 1:
@@ -1391,6 +1475,8 @@ class WorldModelApplication(QDialog):
         self.doubleTimeSlider.setValue([0, 100])
         self.doubleTimeSlider.setMinimumSize(200, 0)
 
+        self.doubleTimeSlider.sliderReleased.connect(self.time_slider_released)
+
         self.alphaCombo = QComboBox()
         self.alphaLabel = QLabel('&alpha:')
         self.alphaLabel.setBuddy(self.alphaCombo)
@@ -1435,6 +1521,7 @@ class WorldModelApplication(QDialog):
         self.canvas.in_time_signal.connect(lambda x: {
             self.timeSlider.blockSignals(True),
             self.timeSlider.setMaximum(x),
+            self.doubleTimeSlider.setMaximum(x),
             self.timeSlider.setValue(x),
             self.timeLabel.setText(self.timeLabelText.format(x * self.canvas.heatmap_in_time_discr)),
             self.timeSlider.blockSignals(False)})
@@ -1633,6 +1720,17 @@ class WorldModelApplication(QDialog):
         value = value * self.canvas.heatmap_in_time_discr
         self.timeLabel.setText(self.timeLabelText.format(value))
 
+    def time_slider_released(self):
+        values = self.doubleTimeSlider.value()
+        tm = values[0]
+        tn = values[1]
+        if tm != self.canvas.tm:
+            self.canvas.heatmap_in_time_given_tm(tm)
+            self.canvas.tm = tm
+        self.canvas.show_heatmap_in_time(np.clip(tn - tm, 0, self.timeSlider.maximum()))
+        tn = tn * self.canvas.heatmap_in_time_discr
+        self.timeLabel.setText(self.timeLabelText.format(tn))
+
     def disable_inputs(self):
         self.modelNameCombo.setEnabled(False)
         self.heatmapCheck.setEnabled(False)
@@ -1641,6 +1739,8 @@ class WorldModelApplication(QDialog):
         self.filteringButton.setEnabled(False)
         self.timeSlider.setEnabled(False)
         self.alphaCombo.setEnabled(False)
+        #self.doubleTimeSlider.setEnable(False)
+        self.smoothSlider.setEnabled(False)
         self.clear_tree_view()
 
     def enable_inputs(self):
@@ -1651,6 +1751,8 @@ class WorldModelApplication(QDialog):
         self.filteringButton.setEnabled(True)
         self.timeSlider.setEnabled(True)
         self.alphaCombo.setEnabled(True)
+        #self.doubleTimeSlider.setEnable(True)
+        self.smoothSlider.setEnabled(True)
 
     def de_normalize(self, value):
         return int(((value - 0.01) / (0.06 - 0.01)) * (100 - 0) + 0)
