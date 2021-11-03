@@ -1,5 +1,3 @@
-import matplotlib.pyplot as plt
-from math import factorial
 import os
 import pickle
 from math import factorial
@@ -8,7 +6,6 @@ import seaborn as sns
 import os
 from PyQt5.Qt import QStandardItemModel, QStandardItem
 from qtrangeslider import QRangeSlider
-import tensorflow as tf
 
 sns.set_theme(style="dark")
 
@@ -40,7 +37,7 @@ EPSILON = sys.float_info.epsilon
 from PyQt5.QtCore import QThread, pyqtSignal
 import threading
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 physical_devices = tf.config.experimental.list_physical_devices('GPU')
 if len(physical_devices) > 0:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
@@ -102,7 +99,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.unfreeze()
         scene.SceneCanvas.__init__(self, *args, **kwargs)
         # QObject.__init__(self, *args, **kwargs)
-        self.size = (1920, 1024)
+        self.size = (1920, 1080)
         self.title = 'World Model Analysis'
         self.freeze()
 
@@ -1593,11 +1590,11 @@ class WorldModelApplication(QDialog):
         bottomLayout = QVBoxLayout()
         self.curiosityPlotWidget = CuriosityPlot(canvas)
         self.curiosityPlotWidget.setMinimumSize(0, 80)
-        self.curiosityPlotWidget.setMaximumSize(100000, 80)
+        self.curiosityPlotWidget.setMaximumSize(100000, 200)
 
         self.actionPlotWidget = ActionPlot(canvas)
         self.actionPlotWidget.setMinimumSize(0, 80)
-        self.actionPlotWidget.setMaximumSize(100000, 80)
+        self.actionPlotWidget.setMaximumSize(100000, 200)
 
         self.curiosityPlotWidget.hover_signal.connect(lambda x: {
             self.actionPlotWidget.catch_signal(x),
@@ -1800,6 +1797,12 @@ class WorldModelApplication(QDialog):
 
 if __name__ == '__main__':
     if sys.flags.interactive != 1:
+
+        # Handle high resolution displays:
+        if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
+            QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+        if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
+            QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
 
         # build canvas
         canvas = WorlModelCanvas(keys='interactive', show=True)
