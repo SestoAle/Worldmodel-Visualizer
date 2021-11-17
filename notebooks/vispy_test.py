@@ -5,6 +5,13 @@ import numpy as np
 import sys
 
 from vispy import app, visuals, scene
+from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtCore import QDateTime, Qt, QTimer, QObject
+from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit,
+        QDial, QDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+        QProgressBar, QPushButton, QRadioButton, QScrollBar, QSizePolicy,
+        QSlider, QSpinBox, QStyleFactory, QTableWidget, QTabWidget, QTextEdit,
+        QVBoxLayout, QWidget, QFrame, QStackedLayout, QListView, QTreeView)
 
 
 # build your visuals, that's all
@@ -44,6 +51,14 @@ p1.set_data(pos, face_color=colors, symbol='o', size=10,
 # run
 if __name__ == '__main__':
     if sys.flags.interactive != 1:
+
+        if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
+            print('asasdsiouasid')
+            input('...')
+            QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+        if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
+            QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+
         new_pos = np.asarray([data[0] for data in p1._data])
         print(np.shape(new_pos))
         p1.set_data(pos = new_pos, face_color=(1, 1, 1, 1))

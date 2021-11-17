@@ -2,15 +2,17 @@ import os
 import pickle
 from math import factorial
 from copy import deepcopy
+
+import numpy as np
 import seaborn as sns
 import os
 from PyQt5.Qt import QStandardItemModel, QStandardItem
 from qtrangeslider import QRangeSlider
-
 sns.set_theme(style="dark")
 
 import matplotlib.pyplot as plt
 import sys
+import configparser
 
 from architectures.bug_arch_very_acc_final import *
 from motivation.random_network_distillation import RND
@@ -21,9 +23,9 @@ from matplotlib import cm
 import collections
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 
-
 from vispy import app, visuals, scene, gloo
 
+import PyQt5
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import QDateTime, Qt, QTimer, QObject
 from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit,
@@ -32,6 +34,7 @@ from PyQt5.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit,
         QSlider, QSpinBox, QStyleFactory, QTableWidget, QTabWidget, QTextEdit,
         QVBoxLayout, QWidget, QFrame, QStackedLayout, QListView, QTreeView)
 
+PyQt5.QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
 
 EPSILON = sys.float_info.epsilon
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -88,6 +91,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
         self.tm = 0
         self.tn = 0
+
+        self.config = configparser.ConfigParser()
 
         self.mean_moti_thr = 0.04
         self.sum_moti_thr = 16
@@ -390,6 +395,9 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
         self.label.text = label
 
+    def normalize(self, value, rmin, rmax, tmin, tmax):
+        return ((value - rmin) / (rmax - rmin)) * (tmax - tmin) + tmin
+
     def convert_to_rgb(self, minval, maxval, val, colors=[(150, 0, 0), (255, 255, 0), (255, 255, 255)]):
 
         i_f = float(val - minval) / float(maxval - minval) * (len(colors) - 1)
@@ -416,9 +424,22 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 # pos_key = ' '.join(map(str, position))
                 # if pos_key not in rnd_buffer:
                 #     rnd_buffer[pos_key] = 1
-                position[0] = (((position[0] + 1) / 2) * 500)
-                position[1] = (((position[1] + 1) / 2) * 500)
-                position[2] = (((position[2] + 1) / 2) * 60)
+                position[0] = self.normalize(position[0],
+                                             self.config['DEFAULT']['rmin_x'],
+                                             self.config['DEFAULT']['rmax_x'],
+                                             self.config['DEFAULT']['tmin_x'],
+                                             self.config['DEFAULT']['tmax_x'])
+                position[1] = self.normalize(position[1],
+                                             self.config['DEFAULT']['rmin_y'],
+                                             self.config['DEFAULT']['rmax_y'],
+                                             self.config['DEFAULT']['tmin_y'],
+                                             self.config['DEFAULT']['tmax_y'])
+                position[2] = self.normalize(position[2],
+                                             self.config['DEFAULT']['rmin_z'],
+                                             self.config['DEFAULT']['rmax_z'],
+                                             self.config['DEFAULT']['tmin_z'],
+                                             self.config['DEFAULT']['tmax_z'])
+
                 position = position.astype(int)
                 pos_key = ' '.join(map(str, position))
                 if pos_key in pos_buffer.keys():
@@ -619,9 +640,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             for h in self.heatmap_in_time:
                 h.visible = False
             index = np.clip(index, 0, len(self.heatmap_in_time) - 1)
-            print(index)
-            print(len(self.heatmap_in_time))
-            print(self.heatmap.visible)
             # if index == len(self.heatmap_in_time):
             #     self.heatmap.visible = True
             #     self.heatmap_signal.emit(True)
@@ -664,9 +682,21 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.delete_agent()
         index = int(index)
         smoothed_traj = deepcopy(self.trajs[self.index][:, :3])
-        smoothed_traj[:, 0] = ((np.asarray(smoothed_traj[:, 0]) + 1) / 2) * 500
-        smoothed_traj[:, 1] = ((np.asarray(smoothed_traj[:, 1]) + 1) / 2) * 500
-        smoothed_traj[:, 2] = ((np.asarray(smoothed_traj[:, 2]) + 1) / 2) * 60
+        smoothed_traj[:, 0] = self.normalize(np.asarray(smoothed_traj[:, 0]),
+                                     self.config['DEFAULT']['rmin_x'],
+                                     self.config['DEFAULT']['rmax_x'],
+                                     self.config['DEFAULT']['tmin_x'],
+                                     self.config['DEFAULT']['tmax_x'])
+        smoothed_traj[:, 1] = self.normalize(np.asarray(smoothed_traj[:, 1]),
+                                     self.config['DEFAULT']['rmin_y'],
+                                     self.config['DEFAULT']['rmax_y'],
+                                     self.config['DEFAULT']['tmin_y'],
+                                     self.config['DEFAULT']['tmax_y'])
+        smoothed_traj[:, 2] = self.normalize(np.asarray(smoothed_traj[:, 2]),
+                                     self.config['DEFAULT']['rmin_z'],
+                                     self.config['DEFAULT']['rmax_z'],
+                                     self.config['DEFAULT']['tmin_z'],
+                                     self.config['DEFAULT']['tmax_z'])
 
         if self.smooth_window > 0:
             smoothed_traj[:, 0] = self.savitzky_golay(smoothed_traj[:, 0], self.smooth_window, 3)
@@ -680,9 +710,21 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.agent_timer = threading.Timer(1/60, self.move_agent)
         to_move = self.trajs[self.index][self.animation_index, :3]
         to_move = np.asarray(to_move)
-        to_move[0] = (((to_move[0] + 1) / 2) * 500)
-        to_move[1] = (((to_move[1] + 1) / 2) * 500)
-        to_move[2] = (((to_move[2] + 1) / 2) * 60)
+        to_move[0] = self.normalize(to_move[0],
+                                     self.config['DEFAULT']['rmin_x'],
+                                     self.config['DEFAULT']['rmax_x'],
+                                     self.config['DEFAULT']['tmin_x'],
+                                     self.config['DEFAULT']['tmax_x'])
+        to_move[1] = self.normalize(to_move[1],
+                                     self.config['DEFAULT']['rmin_y'],
+                                     self.config['DEFAULT']['rmax_y'],
+                                     self.config['DEFAULT']['tmin_y'],
+                                     self.config['DEFAULT']['tmax_y'])
+        to_move[2] = self.normalize(to_move[2],
+                                     self.config['DEFAULT']['rmin_z'],
+                                     self.config['DEFAULT']['rmax_z'],
+                                     self.config['DEFAULT']['tmin_z'],
+                                     self.config['DEFAULT']['tmax_z'])
         to_move = to_move.astype(int)
         current_tr = self.agent.transform.translate
         if np.linalg.norm(to_move - current_tr[:3]) < 0.05 or np.linalg.norm(self.movement_vector) < 0.05:
@@ -694,9 +736,21 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 return
             to_move = self.trajs[self.index][self.animation_index, :3]
             to_move = np.asarray(to_move)
-            to_move[0] = (((to_move[0] + 1) / 2) * 500)
-            to_move[1] = (((to_move[1] + 1) / 2) * 500)
-            to_move[2] = (((to_move[2] + 1) / 2) * 60)
+            to_move[0] = self.normalize(to_move[0],
+                                        self.config['DEFAULT']['rmin_x'],
+                                        self.config['DEFAULT']['rmax_x'],
+                                        self.config['DEFAULT']['tmin_x'],
+                                        self.config['DEFAULT']['tmax_x'])
+            to_move[1] = self.normalize(to_move[1],
+                                        self.config['DEFAULT']['rmin_y'],
+                                        self.config['DEFAULT']['rmax_y'],
+                                        self.config['DEFAULT']['tmin_y'],
+                                        self.config['DEFAULT']['tmax_y'])
+            to_move[2] = self.normalize(to_move[2],
+                                        self.config['DEFAULT']['rmin_z'],
+                                        self.config['DEFAULT']['rmax_z'],
+                                        self.config['DEFAULT']['tmin_z'],
+                                        self.config['DEFAULT']['tmax_z'])
             to_move = to_move.astype(int)
             self.movement_vector = to_move - current_tr[:3]
             self.movement_vector = self.movement_vector / self.agent_speed
@@ -808,9 +862,22 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 # if to_observe:
                 for i, point in enumerate(traj):
                     de_point = np.zeros(3)
-                    de_point[0] = ((np.asarray(point[0]) + 1) / 2) * 500
-                    de_point[1] = ((np.asarray(point[1]) + 1) / 2) * 500
-                    de_point[2] = ((np.asarray(point[2]) + 1) / 2) * 60
+                    de_point[0] = self.normalize((np.asarray(point[0])),
+                                                 self.config['DEFAULT']['rmin_x'],
+                                                 self.config['DEFAULT']['rmax_x'],
+                                                 self.config['DEFAULT']['tmin_x'],
+                                                 self.config['DEFAULT']['tmax_x'])
+                    de_point[1] = self.normalize((np.asarray(point[1])),
+                                                 self.config['DEFAULT']['rmin_y'],
+                                                 self.config['DEFAULT']['rmax_y'],
+                                                 self.config['DEFAULT']['tmin_y'],
+                                                 self.config['DEFAULT']['tmax_y'])
+                    de_point[2] = self.normalize((np.asarray(point[2])),
+                                                 self.config['DEFAULT']['rmin_z'],
+                                                 self.config['DEFAULT']['rmax_z'],
+                                                 self.config['DEFAULT']['tmin_z'],
+                                                 self.config['DEFAULT']['tmax_z'])
+
                     if goal_area_x < de_point[0] < (goal_area_x + goal_area_width) and \
                             goal_area_z < de_point[1] < (goal_area_z + goal_area_height) and \
                             np.abs(de_point[2] - desired_point_y) < threshold:
@@ -837,9 +904,21 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                     states_batch.append(state)
                     actions_batch.append(action)
                     de_point = np.zeros(3)
-                    de_point[0] = ((np.asarray(state['global_in'][0]) + 1) / 2) * 500
-                    de_point[1] = ((np.asarray(state['global_in'][1]) + 1) / 2) * 500
-                    de_point[2] = ((np.asarray(state['global_in'][2]) + 1) / 2) * 60
+                    de_point[0] = self.normalize(np.asarray(state['global_in'][0]),
+                                                 self.config['DEFAULT']['rmin_x'],
+                                                 self.config['DEFAULT']['rmax_x'],
+                                                 self.config['DEFAULT']['tmin_x'],
+                                                 self.config['DEFAULT']['tmax_x'])
+                    de_point[1] = self.normalize(np.asarray(state['global_in'][1]),
+                                                 self.config['DEFAULT']['rmin_y'],
+                                                 self.config['DEFAULT']['rmax_y'],
+                                                 self.config['DEFAULT']['tmin_y'],
+                                                 self.config['DEFAULT']['tmax_y'])
+                    de_point[2] = self.normalize(np.asarray(state['global_in'][2]),
+                                                 self.config['DEFAULT']['rmin_z'],
+                                                 self.config['DEFAULT']['rmax_z'],
+                                                 self.config['DEFAULT']['tmin_z'],
+                                                 self.config['DEFAULT']['tmax_z'])
 
                     if goal_area_x < de_point[0] < (goal_area_x + goal_area_width) and \
                             goal_area_z < de_point[1] < (goal_area_z + goal_area_height) and \
@@ -1165,12 +1244,42 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         trajectories = collections.OrderedDict(sorted(trajectories.items()))
         actions = {int(k): v for k, v in actions.items()}
         actions = collections.OrderedDict(sorted(actions.items()))
+
         return trajectories, actions
+
+    def load_config(self, model_name):
+        if os.path.exists('arrays/{}/{}.ini'.format(model_name, model_name)):
+            self.config.read('arrays/{}/{}.ini'.format(model_name, model_name))
+        else:
+            # Create config
+            self.config['DEFAULT'] = {
+                'rmin_x': -1,
+                'rmax_x': 1,
+                'tmin_x': -1,
+                'tmax_x': 1,
+                'rmin_y': -1,
+                'rmax_y': 1,
+                'tmin_y': -1,
+                'tmax_y': 1,
+                'rmin_z': -1,
+                'rmax_z': 1,
+                'tmin_z': -1,
+                'tmax_z': 1,
+            }
+
+            self.config['ACTIONS'] = {}
+            for i in range(20):
+                self.config['ACTIONS']["Action {}".format(i)] = "Action {}".format(i)
+
+            with open('arrays/{}/{}.ini'.format(model_name, model_name), 'w') as configfile:
+                self.config.write(configfile)
 
     def load_data(self, model_name):
 
         self.remove_maps()
         motivation = self.load_motivation(model_name)
+
+        self.load_config(model_name)
 
         buffer, buffer_alpha, world_model, stats, world_model_in_time = self.load_precomputed_models(model_name)
         pos_buffers_in_time, pos_buffer_is_grounded = self.load_precomputed_time_models(model_name)
@@ -1273,9 +1382,21 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 im_rews = self.im_rews[index]
 
         if with_denorm:
-            ep_trajectory[:, 0] = ((np.asarray(ep_trajectory[:, 0]) + 1) / 2) * 500
-            ep_trajectory[:, 1] = ((np.asarray(ep_trajectory[:, 1]) + 1) / 2) * 500
-            ep_trajectory[:, 2] = ((np.asarray(ep_trajectory[:, 2]) + 1) / 2) * 60
+            ep_trajectory[:, 0] = self.normalize(np.asarray(ep_trajectory[:, 0]),
+                                         self.config['DEFAULT']['rmin_x'],
+                                         self.config['DEFAULT']['rmax_x'],
+                                         self.config['DEFAULT']['tmin_x'],
+                                         self.config['DEFAULT']['tmax_x'])
+            ep_trajectory[:, 1] = self.normalize(np.asarray(ep_trajectory[:, 1]),
+                                         self.config['DEFAULT']['rmin_y'],
+                                         self.config['DEFAULT']['rmax_y'],
+                                         self.config['DEFAULT']['tmin_y'],
+                                         self.config['DEFAULT']['tmax_y'])
+            ep_trajectory[:, 2] = self.normalize(np.asarray(ep_trajectory[:, 2]),
+                                         self.config['DEFAULT']['rmin_z'],
+                                         self.config['DEFAULT']['rmax_z'],
+                                         self.config['DEFAULT']['tmin_z'],
+                                         self.config['DEFAULT']['tmax_z'])
 
         smoothed_traj = deepcopy(ep_trajectory)
 
@@ -1373,7 +1494,7 @@ class MplCanvas(FigureCanvasQTAgg):
         self.axes = plt.subplot()
         self.canvas = canvas
         self.hover_line = None
-        plt.axis('off')
+        # plt.axis('off')
         plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
         # plt.clf()
         FigureCanvasQTAgg.__init__(self, self.fig)
@@ -1436,6 +1557,24 @@ class ActionPlot(MplCanvas):
         self.axes.scatter(x, y, c=colors, s=10, marker='s')
         # self.axes.plot(x, y)
 
+class LegendPlot(MplCanvas):
+    def __init__(self, canvas):
+        self.cmap = cm.get_cmap('tab10')
+        MplCanvas.__init__(self, canvas)
+
+    def plot(self, x, y):
+        tick_colors = [self.cmap(p)[:3] for p in range(10)]
+        num_actions = np.max(x) + 1
+        self.axes.scatter(np.ones(num_actions) * 100, np.arange(num_actions), c=tick_colors, s=10, marker='s')
+
+        y_ticks = list(self.canvas.config['ACTIONS'].values())[:num_actions]
+
+        self.axes.set_yticks(np.arange(10))
+        self.axes.set_yticklabels(y_ticks)
+
+        self.axes.tick_params(axis='y', direction='in', labelsize=5, pad=-40)
+        for ticklabel, tickcolor in zip(self.axes.get_yticklabels(), tick_colors):
+            ticklabel.set_color(tickcolor)
 
 class WorldModelApplication(QDialog):
     def __init__(self, canvas, parent=None):
@@ -1592,9 +1731,16 @@ class WorldModelApplication(QDialog):
         self.curiosityPlotWidget.setMinimumSize(0, 80)
         self.curiosityPlotWidget.setMaximumSize(100000, 200)
 
+        actionLayout = QHBoxLayout()
+
         self.actionPlotWidget = ActionPlot(canvas)
         self.actionPlotWidget.setMinimumSize(0, 80)
         self.actionPlotWidget.setMaximumSize(100000, 200)
+
+        self.legendPlotWidget = LegendPlot(canvas)
+        self.legendPlotWidget.setMinimumSize(70, 80)
+        self.legendPlotWidget.setMaximumSize(70, 200)
+        actionLayout.setSpacing(0)
 
         self.curiosityPlotWidget.hover_signal.connect(lambda x: {
             self.actionPlotWidget.catch_signal(x),
@@ -1607,9 +1753,10 @@ class WorldModelApplication(QDialog):
 
         self.canvas.plot_traj_signal.connect(self.plot_traj_data)
 
+        actionLayout.addWidget(self.legendPlotWidget)
+        actionLayout.addWidget(self.actionPlotWidget)
         bottomLayout.addWidget(self.curiosityPlotWidget)
-        bottomLayout.addWidget(self.actionPlotWidget)
-
+        bottomLayout.addLayout(actionLayout)
         # bottomLayout.addStretch(1)
 
         mainLayout = QVBoxLayout()
@@ -1709,11 +1856,13 @@ class WorldModelApplication(QDialog):
         if len(x) == 0:
             self.curiosityPlotWidget.clear_plot()
             self.actionPlotWidget.clear_plot()
+            self.legendPlotWidget.clear_plot()
         else:
             curiosity = x[0]
             actions = x[1]
             self.curiosityPlotWidget.show_data(np.arange(len(curiosity)), curiosity)
             self.actionPlotWidget.show_data(np.arange(len(actions)), actions)
+            self.legendPlotWidget.show_data(actions, None)
 
     def alpha_name_changed(self, value):
         if value == 'all':
@@ -1797,12 +1946,15 @@ class WorldModelApplication(QDialog):
 
 if __name__ == '__main__':
     if sys.flags.interactive != 1:
+        import matplotlib
+        matplotlib.use('TKAgg', force=True)
 
-        # Handle high resolution displays:
-        if hasattr(QtCore.Qt, 'AA_EnableHighDpiScaling'):
-            QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
-        if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
-            QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+        if plt.get_backend() == 'Qt5Agg':
+            from matplotlib.backends.qt_compat import QtWidgets
+
+            qApp = QtWidgets.QApplication(sys.argv)
+            plt.matplotlib.rcParams['figure.dpi'] = qApp.desktop().physicalDpiX()
+            # plt.matplotlib.rcParams['figure.dpi'] = 50
 
         # build canvas
         canvas = WorlModelCanvas(keys='interactive', show=True)
