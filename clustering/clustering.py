@@ -36,8 +36,8 @@ def normalize(value, rmin, rmax, tmin, tmax):
     return ((value - rmin) / (rmax - rmin)) * (tmax - tmin) + tmin
 
 def frechet_distance(traj1, traj2, config):
-    p = deepcopy(traj1)
-    q = deepcopy(traj2)
+    p = deepcopy(np.asarray(traj1))
+    q = deepcopy(np.asarray(traj2))
     p[:, 0] = normalize(p[:, 0],
                        config['DEFAULT']['rmin_x'],
                        config['DEFAULT']['rmax_x'],
@@ -86,7 +86,8 @@ def thread_compute_distance(index, trajectory, trajectories):
     return distances
 
 def reduce_traj(index, trajectory, config):
-    traj = trajectory[:, :3]
+    traj = np.asarray(trajectory)[:, :3]
+
     traj[:, 0] = normalize(traj[:, 0],
                         config['DEFAULT']['rmin_x'],
                         config['DEFAULT']['rmax_x'],
@@ -125,6 +126,7 @@ def cluster_trajectories(trajs, latents, means, config, num_clusters=20):
             indeces = [int(k) for k in key.split(',')]
             dist_matrix[indeces[0], indeces[1]] += dist[key]
 
+    dist_matrix = np.clip(dist_matrix, 0, 9999999)
     clusterer = KMedoids(num_clusters, metric='precomputed', init='k-medoids++').fit(dist_matrix)
 
     num_cluster = np.max(clusterer.labels_)

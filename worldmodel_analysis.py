@@ -90,7 +90,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.cluster_size = 20
         self.smooth_window = 5
         self.trajectory_visualizer = True
-        self.heatmap_in_time_discr = 20000
+        self.heatmap_in_time_discr = 10000
 
         self.tm = 0
         self.tn = 0
@@ -240,12 +240,12 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         f.close()
 
 
-        traj_to_save = dict(x_s=self.trajs[line_index][:, 0], z_s=self.trajs[line_index][:, 1], y_s=self.trajs[line_index][:, 2],
-                            im_values=np.zeros(501), il_values=np.zeros(501))
-        json_str = json.dumps(traj_to_save, cls=NumpyEncoder)
-        f = open("../Playtesting-Env/Assets/Resources/traj.json", "w")
-        f.write(json_str)
-        f.close()
+        # traj_to_save = dict(x_s=self.trajs[line_index][:, 0], z_s=self.trajs[line_index][:, 1], y_s=self.trajs[line_index][:, 2],
+        #                     im_values=np.zeros(501), il_values=np.zeros(501))
+        # json_str = json.dumps(traj_to_save, cls=NumpyEncoder)
+        # f = open("../Playtesting-Env/Assets/Resources/traj.json", "w")
+        # f.write(json_str)
+        # f.close()
 
         self.one_line = True
 
@@ -466,21 +466,24 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 position = position.astype(int)
                 pos_key = ' '.join(map(str, position))
                 if pos_key in pos_buffer.keys():
-                    pos_buffer[pos_key] += 1
                     if state[3] == 1:
+                        pos_buffer[pos_key] += 1
                         pos_buffer_is_grounded[pos_key] = state[3]
                         pos_buffer_alpha[pos_key][int(state[-2] * 10)] += 1
                 else:
-                    pos_buffer[pos_key] = 1
                     pos_buffer_is_grounded[pos_key] = state[3]
-                    alphas = np.zeros(11)
-                    alphas[int(state[-2] * 10)] = 1
-                    pos_buffer_alpha[pos_key] = alphas
+                    if state[3] == 1:
+                        pos_buffer[pos_key] = 1
+                        alphas = np.zeros(11)
+                        alphas[int(state[-2] * 10)] = 1
+                        pos_buffer_alpha[pos_key] = alphas
 
                 if pos_key in pos_buffer_in_time.keys():
-                    pos_buffer_in_time[pos_key] += 1
+                    if state[3] == 1:
+                        pos_buffer_in_time[pos_key] += 1
                 else:
-                    pos_buffer_in_time[pos_key] = 1
+                    if state[3] == 1:
+                        pos_buffer_in_time[pos_key] = 1
 
             if count % self.heatmap_in_time_discr == 0:
                 world_model_t = []
@@ -679,7 +682,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         starting_position = starting_position.astype(int)
         if self.agent == None:
             Cube = scene.visuals.create_visual_node(visuals.CubeVisual)
-            self.agent = Cube(parent=self.view.scene, color='white', size=2)
+            self.agent = Cube(parent=self.view.scene, color='white', size=10)
             # Define a scale and translate transformation :
             self.agent.transform = visuals.transforms.STTransform(translate=starting_position)
         else:
@@ -926,7 +929,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                             goal_area_z < de_point[1] < (goal_area_z + goal_area_height) and \
                             np.abs(de_point[2] - desired_point_y) < threshold:
                         #         if True:
-                        traj_to_observe.append(traj)
+                        traj_to_observe.append(np.asarray(traj))
                         episodes_to_observe.append(keys)
                         acts_to_observe.append(actions[keys])
                         break
@@ -1046,8 +1049,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
         all_normalized_im_rews = []
         all_sum_fitlered_im_rews = []
-        all_points = []
-        all_im_rews = []
         traj_to_observe = traj_to_observe[idxs_to_observe]
         acts_to_observe = acts_to_observe[idxs_to_observe]
         # Plot the trajectories
@@ -1464,12 +1465,15 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                                          self.config['DEFAULT']['rmax_z'],
                                          self.config['DEFAULT']['tmin_z'],
                                          self.config['DEFAULT']['tmax_z'])
+
+        noise = np.random.uniform(1e-5, 1e-7, (len(traj), 3))
         smoothed_traj = deepcopy(ep_trajectory)
 
         if smooth_window > 5:
             smoothed_traj[:, 0] = self.savitzky_golay(smoothed_traj[:, 0], smooth_window, 3)
             smoothed_traj[:, 1] = self.savitzky_golay(smoothed_traj[:, 1], smooth_window, 3)
             smoothed_traj[:, 2] = self.savitzky_golay(smoothed_traj[:, 2], smooth_window, 3)
+            noise = 0
 
         if color is None:
             default_colors = [(0, 255, 0), (0, 255, 255), (255, 0, 255)]
@@ -1513,7 +1517,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             colors = color
 
         Tube3D = scene.visuals.create_visual_node(visuals.TubeVisual)
-        p1 = Tube3D(parent=view.scene, points=smoothed_traj[:, :3], color=colors, radius=0.5)
+
+        p1 = Tube3D(parent=view.scene, points=smoothed_traj[:, :3] + noise, color=colors, radius=0.5)
         p1.shading_filter.enabled = False
         if tmp_line:
             if self.tmp_line is not None:
