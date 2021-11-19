@@ -28,17 +28,48 @@ def compute_distance_matrix(trajectories, method="Frechet"):
             dist_m[j, i] = dist_m[i, j]
     return dist_m
 
-def frechet_distance(traj1, traj2):
+def normalize(value, rmin, rmax, tmin, tmax):
+    rmin = float(rmin)
+    rmax = float(rmax)
+    tmin = float(tmin)
+    tmax = float(tmax)
+    return ((value - rmin) / (rmax - rmin)) * (tmax - tmin) + tmin
+
+def frechet_distance(traj1, traj2, config):
     p = deepcopy(traj1)
     q = deepcopy(traj2)
-    p[:, 0] = (((p[:, 0]) + 1) / 2) * 500
-    p[:, 1] = (((p[:, 1]) + 1) / 2) * 500
-    p[:, 2] = (((p[:, 2]) + 1) / 2) * 60
-    p = reduce_traj(0, p)
-    q[:, 0] = (((q[:, 0]) + 1) / 2) * 500
-    q[:, 1] = (((q[:, 1]) + 1) / 2) * 500
-    q[:, 2] = (((q[:, 2]) + 1) / 2) * 60
-    q = reduce_traj(0, q)
+    p[:, 0] = normalize(p[:, 0],
+                       config['DEFAULT']['rmin_x'],
+                       config['DEFAULT']['rmax_x'],
+                       config['DEFAULT']['tmin_x'],
+                       config['DEFAULT']['tmax_x'])
+    p[:, 1] = normalize(p[:, 1],
+                        config['DEFAULT']['rmin_y'],
+                        config['DEFAULT']['rmax_y'],
+                        config['DEFAULT']['tmin_y'],
+                        config['DEFAULT']['tmax_y'])
+    p[:, 2] = normalize(p[:, 2],
+                        config['DEFAULT']['rmin_z'],
+                        config['DEFAULT']['rmax_z'],
+                        config['DEFAULT']['tmin_z'],
+                        config['DEFAULT']['tmax_z'])
+    p = reduce_traj(0, p, config)
+    q[:, 0] = normalize(q[:, 0],
+                       config['DEFAULT']['rmin_x'],
+                       config['DEFAULT']['rmax_x'],
+                       config['DEFAULT']['tmin_x'],
+                       config['DEFAULT']['tmax_x'])
+    q[:, 1] = normalize(q[:, 1],
+                        config['DEFAULT']['rmin_y'],
+                        config['DEFAULT']['rmax_y'],
+                        config['DEFAULT']['tmin_y'],
+                        config['DEFAULT']['tmax_y'])
+    q[:, 2] = normalize(q[:, 2],
+                        config['DEFAULT']['rmin_z'],
+                        config['DEFAULT']['rmax_z'],
+                        config['DEFAULT']['tmin_z'],
+                        config['DEFAULT']['tmax_z'])
+    q = reduce_traj(0, q, config)
     distance = euclidean
     fdfdm = FastDiscreteFrechetMatrix(distance)
     return fdfdm.distance(p, q)
@@ -54,22 +85,34 @@ def thread_compute_distance(index, trajectory, trajectories):
         distances['{},{}'.format(index,j)] = distances['{},{}'.format(j,index)] = fdfdm.distance(p, q)
     return distances
 
-def reduce_traj(index, trajectory):
+def reduce_traj(index, trajectory, config):
     traj = trajectory[:, :3]
-    traj[:, 0] = (((traj[:, 0]) + 1) / 2) * 500
-    traj[:, 1] = (((traj[:, 1]) + 1) / 2) * 500
-    traj[:, 2] = (((traj[:, 2]) + 1) / 2) * 60
+    traj[:, 0] = normalize(traj[:, 0],
+                        config['DEFAULT']['rmin_x'],
+                        config['DEFAULT']['rmax_x'],
+                        config['DEFAULT']['tmin_x'],
+                        config['DEFAULT']['tmax_x'])
+    traj[:, 1] = normalize(traj[:, 1],
+                        config['DEFAULT']['rmin_y'],
+                        config['DEFAULT']['rmax_y'],
+                        config['DEFAULT']['tmin_y'],
+                        config['DEFAULT']['tmax_y'])
+    traj[:, 2] = normalize(traj[:, 2],
+                        config['DEFAULT']['rmin_z'],
+                        config['DEFAULT']['rmax_z'],
+                        config['DEFAULT']['tmin_z'],
+                        config['DEFAULT']['tmax_z'])
     new_traj, indices = rdp_with_index(traj, range(np.shape(traj)[0]), 50)
     new_traj = np.asarray(new_traj)
     return new_traj
 
-def cluster_trajectories(trajs, latents, means, num_clusters=20):
+def cluster_trajectories(trajs, latents, means, config, num_clusters=20):
 
     trajectories = deepcopy(trajs)
     np.asarray(trajectories)
     num_cores = multiprocessing.cpu_count()
     all_reduced_trajectories = Parallel(n_jobs=num_cores)(
-        delayed(reduce_traj)(i, traj)
+        delayed(reduce_traj)(i, traj, config)
        for i, traj in enumerate(trajectories))
 
     dist_matrix = np.zeros((len(all_reduced_trajectories), len(all_reduced_trajectories)))

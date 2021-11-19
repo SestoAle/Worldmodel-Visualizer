@@ -31,10 +31,11 @@ ax2.scatter(x, y, c=colors, s=10, marker='s')
 # plt.set_xlim(0, 100)
 
 # ax1.scatter(x, y, c=colors, s=10, marker='s')
-y_ticks = ['Action 1', 'Action 2', 'Action 2', 'Action 2', 'Action 2', 'Action 2' ,'Action 2' ,'Action 2', 'Action 2',
-           'Action 2']
-ax1.set_yticks(np.arange(10))
-ax1.set_yticklabels(y_ticks)
+# y_ticks = ['Action 1', 'Action 2', 'Action 2', 'Action 2', 'Action 2', 'Action 2' ,'Action 2' ,'Action 2', 'Action 2',
+#            'Action 2']
+# y_ticks = ['' for i in range(10)]
+# ax1.set_yticks(np.arange(10))
+# ax1.set_yticklabels(y_ticks)
 tick_colors = [cmap(p)[:3] for p in range(10)]
 ax1.tick_params(axis='y', direction='in', labelsize=5, pad=-30)
 for ticklabel, tickcolor in zip(ax1.get_yticklabels(), tick_colors):

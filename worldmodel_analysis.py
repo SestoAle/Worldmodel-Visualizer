@@ -8,13 +8,16 @@ import seaborn as sns
 import os
 from PyQt5.Qt import QStandardItemModel, QStandardItem
 from qtrangeslider import QRangeSlider
+import tensorflow as tf
+import json
+from utils import NumpyEncoder
+import importlib
 sns.set_theme(style="dark")
 
 import matplotlib.pyplot as plt
 import sys
 import configparser
 
-from architectures.bug_arch_very_acc_final import *
 from motivation.random_network_distillation import RND
 #from clustering.cluster_im import cluster
 from clustering.clustering import cluster_trajectories as cluster_simple
@@ -40,7 +43,7 @@ EPSILON = sys.float_info.epsilon
 from PyQt5.QtCore import QThread, pyqtSignal
 import threading
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 physical_devices = tf.config.experimental.list_physical_devices('GPU')
 if len(physical_devices) > 0:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
@@ -87,7 +90,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.cluster_size = 20
         self.smooth_window = 5
         self.trajectory_visualizer = True
-        self.heatmap_in_time_discr = 500
+        self.heatmap_in_time_discr = 20000
 
         self.tm = 0
         self.tn = 0
@@ -396,6 +399,10 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.label.text = label
 
     def normalize(self, value, rmin, rmax, tmin, tmax):
+        rmin = float(rmin)
+        rmax = float(rmax)
+        tmin = float(tmin)
+        tmax = float(tmax)
         return ((value - rmin) / (rmax - rmin)) * (tmax - tmin) + tmin
 
     def convert_to_rgb(self, minval, maxval, val, colors=[(150, 0, 0), (255, 255, 0), (255, 255, 255)]):
@@ -417,6 +424,22 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         pos_buffer_is_grounded = dict()
         pos_buffer_alpha = dict()
         count = 0
+
+        rmin_x = float(self.config['DEFAULT']['rmin_x'])
+        rmax_x = float(self.config['DEFAULT']['rmax_x'])
+        tmin_x = float(self.config['DEFAULT']['tmin_x'])
+        tmax_x = float(self.config['DEFAULT']['tmax_x'])
+
+        rmin_y = float(self.config['DEFAULT']['rmin_y'])
+        rmax_y = float(self.config['DEFAULT']['rmax_y'])
+        tmin_y = float(self.config['DEFAULT']['tmin_y'])
+        tmax_y = float(self.config['DEFAULT']['tmax_y'])
+
+        rmin_z = float(self.config['DEFAULT']['rmin_z'])
+        rmax_z = float(self.config['DEFAULT']['rmax_z'])
+        tmin_z = float(self.config['DEFAULT']['tmin_z'])
+        tmax_z = float(self.config['DEFAULT']['tmax_z'])
+
         for traj in list(trajectories.values())[:]:
             count += 1
             for state in traj:
@@ -425,20 +448,20 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 # if pos_key not in rnd_buffer:
                 #     rnd_buffer[pos_key] = 1
                 position[0] = self.normalize(position[0],
-                                             self.config['DEFAULT']['rmin_x'],
-                                             self.config['DEFAULT']['rmax_x'],
-                                             self.config['DEFAULT']['tmin_x'],
-                                             self.config['DEFAULT']['tmax_x'])
+                                             rmin_x,
+                                             rmax_x,
+                                             tmin_x,
+                                             tmax_x)
                 position[1] = self.normalize(position[1],
-                                             self.config['DEFAULT']['rmin_y'],
-                                             self.config['DEFAULT']['rmax_y'],
-                                             self.config['DEFAULT']['tmin_y'],
-                                             self.config['DEFAULT']['tmax_y'])
+                                             rmin_y,
+                                             rmax_y,
+                                             tmin_y,
+                                             tmax_y)
                 position[2] = self.normalize(position[2],
-                                             self.config['DEFAULT']['rmin_z'],
-                                             self.config['DEFAULT']['rmax_z'],
-                                             self.config['DEFAULT']['tmin_z'],
-                                             self.config['DEFAULT']['tmax_z'])
+                                             rmin_z,
+                                             rmax_z,
+                                             tmin_z,
+                                             tmax_z)
 
                 position = position.astype(int)
                 pos_key = ' '.join(map(str, position))
@@ -769,7 +792,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             # Filler the state
             # TODO: I do this because the state that I saved is only the points AND inventory, not the complete state
             # TODO: it is probably better to save everything
-            filler = np.zeros((66))
+            filler = np.zeros((int(self.config['MODEL']['filler'])))
             traj_to_observe = []
             episodes_to_observe = []
             acts_to_observe = []
@@ -813,12 +836,12 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             # goal_area_width = 44
 
             # Goal Area 4
-            desired_point_y = 1
-            goal_area_x = 442
-            goal_area_z = 38
-            goal_area_y = 1
-            goal_area_height = 65
-            goal_area_width = 46
+            # desired_point_y = 1
+            # goal_area_x = 442
+            # goal_area_z = 38
+            # goal_area_y = 1
+            # goal_area_height = 65
+            # goal_area_width = 46
 
             # desired_point_y = 21
             # goal_area_x = 454
@@ -827,7 +850,14 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             # goal_area_height = 5
             # goal_area_width = 5
 
-            threshold = 4
+            # threshold = 4
+
+            desired_point_y = float(self.config['GOAL']['area_y'])
+            goal_area_x = float(self.config['GOAL']['area_x'])
+            goal_area_z = float(self.config['GOAL']['area_z'])
+            goal_area_height = float(self.config['GOAL']['area_height'])
+            goal_area_width = float(self.config['GOAL']['area_width'])
+            threshold = float(self.config['GOAL']['area_threshold'])
 
             # Save the motivation rewards and the imitation rewards
             mean_moti_rews = []
@@ -838,10 +868,24 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             sum_il_rews = []
             moti_rews = []
-            points = []
 
             step_moti_rews = []
             step_il_rews = []
+
+            rmin_x = float(self.config['DEFAULT']['rmin_x'])
+            rmax_x = float(self.config['DEFAULT']['rmax_x'])
+            tmin_x = float(self.config['DEFAULT']['tmin_x'])
+            tmax_x = float(self.config['DEFAULT']['tmax_x'])
+
+            rmin_y = float(self.config['DEFAULT']['rmin_y'])
+            rmax_y = float(self.config['DEFAULT']['rmax_y'])
+            tmin_y = float(self.config['DEFAULT']['tmin_y'])
+            tmax_y = float(self.config['DEFAULT']['tmax_y'])
+
+            rmin_z = float(self.config['DEFAULT']['rmin_z'])
+            rmax_z = float(self.config['DEFAULT']['rmax_z'])
+            tmin_z = float(self.config['DEFAULT']['tmin_z'])
+            tmax_z = float(self.config['DEFAULT']['tmax_z'])
 
             # Get only those trajectories that touch the desired points
             for keys, traj in zip(list(trajectories.keys())[:], list(trajectories.values())[:]):
@@ -863,20 +907,20 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 for i, point in enumerate(traj):
                     de_point = np.zeros(3)
                     de_point[0] = self.normalize((np.asarray(point[0])),
-                                                 self.config['DEFAULT']['rmin_x'],
-                                                 self.config['DEFAULT']['rmax_x'],
-                                                 self.config['DEFAULT']['tmin_x'],
-                                                 self.config['DEFAULT']['tmax_x'])
+                                                 rmin_x,
+                                                 rmax_x,
+                                                 tmin_x,
+                                                 tmax_x)
                     de_point[1] = self.normalize((np.asarray(point[1])),
-                                                 self.config['DEFAULT']['rmin_y'],
-                                                 self.config['DEFAULT']['rmax_y'],
-                                                 self.config['DEFAULT']['tmin_y'],
-                                                 self.config['DEFAULT']['tmax_y'])
+                                                 rmin_y,
+                                                 rmax_y,
+                                                 tmin_y,
+                                                 tmax_y)
                     de_point[2] = self.normalize((np.asarray(point[2])),
-                                                 self.config['DEFAULT']['rmin_z'],
-                                                 self.config['DEFAULT']['rmax_z'],
-                                                 self.config['DEFAULT']['tmin_z'],
-                                                 self.config['DEFAULT']['tmax_z'])
+                                                 rmin_z,
+                                                 rmax_z,
+                                                 tmin_z,
+                                                 tmax_z)
 
                     if goal_area_x < de_point[0] < (goal_area_x + goal_area_width) and \
                             goal_area_z < de_point[1] < (goal_area_z + goal_area_height) and \
@@ -905,20 +949,20 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                     actions_batch.append(action)
                     de_point = np.zeros(3)
                     de_point[0] = self.normalize(np.asarray(state['global_in'][0]),
-                                                 self.config['DEFAULT']['rmin_x'],
-                                                 self.config['DEFAULT']['rmax_x'],
-                                                 self.config['DEFAULT']['tmin_x'],
-                                                 self.config['DEFAULT']['tmax_x'])
+                                                 rmin_x,
+                                                 rmax_x,
+                                                 tmin_x,
+                                                 tmax_x)
                     de_point[1] = self.normalize(np.asarray(state['global_in'][1]),
-                                                 self.config['DEFAULT']['rmin_y'],
-                                                 self.config['DEFAULT']['rmax_y'],
-                                                 self.config['DEFAULT']['tmin_y'],
-                                                 self.config['DEFAULT']['tmax_y'])
+                                                 rmin_y,
+                                                 rmax_y,
+                                                 tmin_y,
+                                                 tmax_y)
                     de_point[2] = self.normalize(np.asarray(state['global_in'][2]),
-                                                 self.config['DEFAULT']['rmin_z'],
-                                                 self.config['DEFAULT']['rmax_z'],
-                                                 self.config['DEFAULT']['tmin_z'],
-                                                 self.config['DEFAULT']['tmax_z'])
+                                                 rmin_z,
+                                                 rmax_z,
+                                                 tmin_z,
+                                                 tmax_z)
 
                     if goal_area_x < de_point[0] < (goal_area_x + goal_area_width) and \
                             goal_area_z < de_point[1] < (goal_area_z + goal_area_height) and \
@@ -941,7 +985,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 moti_rew = motivation.eval(states_batch)
                 moti_rews.append(moti_rew)
                 step_moti_rews.extend(moti_rew)
-                points.extend([k['global_in'] for k in states_batch])
                 mean_moti_rew = np.mean(moti_rew)
                 mean_moti_rews.append(mean_moti_rew)
                 mean_moti_rews_dict[idx_traj] = mean_moti_rew
@@ -949,6 +992,9 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 sum_moti_rew = np.sum(moti_rew)
                 sum_moti_rews.append(sum_moti_rew)
                 sum_moti_rews_dict[idx_traj] = sum_moti_rew
+
+                del states_batch[:]
+                del actions_batch[:]
 
             traj_to_observe = np.asarray(traj_to_observe)
             acts_to_observe = np.asarray(acts_to_observe)
@@ -977,7 +1023,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         print(" ")
 
         # im_heatmap = []
-        filler = np.zeros((66))
+        filler = np.zeros((int(self.config['MODEL']['filler'])))
 
         moti_to_observe = []
         mean_to_observe = []
@@ -1023,15 +1069,15 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 states_batch.append(state)
 
             im_rew = motivation.eval(states_batch)
-            all_im_rews.extend(im_rew)
-            all_points.extend([k['global_in'] for k in states_batch])
+            # all_im_rews.extend(im_rew)
+            # all_points.extend([k['global_in'] for k in states_batch])
             # im_rew = savitzky_golay(im_rew, 51, 3)
             # im_rew = (im_rew - np.min(step_moti_rews)) / (np.max(step_moti_rews) - np.min(step_moti_rews))
             all_normalized_im_rews.append(im_rew)
             all_sum_fitlered_im_rews.append(np.sum(im_rew))
 
-        all_points = np.asarray(all_points)
-        all_im_rews = np.asarray(all_im_rews)
+        # all_points = np.asarray(all_points)
+        # all_im_rews = np.asarray(all_im_rews)
         # indices = np.where(all_im_rews > np.asarray(0.08))
         # indices = np.reshape(indices, -1)
         # points_to_plot = deepcopy(all_points)
@@ -1067,7 +1113,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             # cluster_indices, centroids, cluster_labels = cluster(all_normalized_im_rews, clusters=self.cluster_size,
             #                           means=mean_to_observe, sums=sum_to_observe)
             cluster_indices, centroids, cluster_labels = cluster_simple(traj_to_observe, latents=all_normalized_im_rews,
-                                                                 means=mean_to_observe, num_clusters=self.cluster_size)
+                                                                        means=mean_to_observe, config=self.config,
+                                                                        num_clusters=self.cluster_size)
         else:
             cluster_indices = np.arange(len(all_normalized_im_rews))
             centroids = all_sum_fitlered_im_rews
@@ -1109,7 +1156,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         for tr1 in self.trajs:
             tr1_dist = []
             for tr2 in self.trajs:
-                tr1_dist.append(frechet_distance(tr1, tr2))
+                tr1_dist.append(frechet_distance(tr1, tr2, self.config))
             all_distances.append(tr1_dist)
 
         all_distances = np.asarray(all_distances)
@@ -1271,15 +1318,34 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             for i in range(20):
                 self.config['ACTIONS']["Action {}".format(i)] = "Action {}".format(i)
 
+            self.config['GOAL'] = {
+                'area_x': 0,
+                'area_z': 0,
+                'area_width': 0,
+                'area_height': 0,
+                'area_y': 0,
+                'area_threshold': 0,
+            }
+
+            self.config['FILTERING'] = {
+                'mean_moti_thr': 0.04,
+                'sum_moti_thr': 16
+            }
+
             with open('arrays/{}/{}.ini'.format(model_name, model_name), 'w') as configfile:
                 self.config.write(configfile)
 
     def load_data(self, model_name):
 
+        self.load_config(model_name)
+        self.mean_moti_thr = float(self.config['FILTERING']['mean_moti_thr'])
+        self.sum_moti_thr = float(self.config['FILTERING']['sum_moti_thr'])
+        view.camera.center = (((float(self.config['DEFAULT']['tmax_x']) - float(self.config['DEFAULT']['tmin_x'])) / 2) + float(self.config['DEFAULT']['tmin_x']),
+                              ((float(self.config['DEFAULT']['tmax_y']) - float(self.config['DEFAULT']['tmin_y'])) / 2) + float(self.config['DEFAULT']['tmin_y']),
+                              60)
+
         self.remove_maps()
         motivation = self.load_motivation(model_name)
-
-        self.load_config(model_name)
 
         buffer, buffer_alpha, world_model, stats, world_model_in_time = self.load_precomputed_models(model_name)
         pos_buffers_in_time, pos_buffer_is_grounded = self.load_precomputed_time_models(model_name)
@@ -1348,6 +1414,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.load_ending_signal.emit(True)
 
     def load_motivation(self, model_name):
+        arch = importlib.import_module('architectures.{}'.format(self.config['MODEL']['architecture']))
         graph = tf.compat.v1.Graph()
         motivation = None
         reward_model = None
@@ -1356,10 +1423,10 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             with graph.as_default():
                 tf.compat.v1.disable_eager_execution()
                 motivation_sess = tf.compat.v1.Session(graph=graph)
-                motivation = RND(motivation_sess, input_spec=input_spec,
-                                 network_spec_predictor=network_spec_rnd_predictor,
-                                 network_spec_target=network_spec_rnd_target, obs_normalization=False,
-                                 obs_to_state=obs_to_state_rnd, motivation_weight=1)
+                motivation = RND(motivation_sess, input_spec=arch.input_spec,
+                                 network_spec_predictor=arch.network_spec_rnd_predictor,
+                                 network_spec_target=arch.network_spec_rnd_target, obs_normalization=False,
+                                 obs_to_state=arch.obs_to_state_rnd, motivation_weight=1)
                 init = tf.compat.v1.global_variables_initializer()
                 motivation_sess.run(init)
                 motivation.load_model(name=model_name, folder='saved')
@@ -1397,10 +1464,9 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                                          self.config['DEFAULT']['rmax_z'],
                                          self.config['DEFAULT']['tmin_z'],
                                          self.config['DEFAULT']['tmax_z'])
-
         smoothed_traj = deepcopy(ep_trajectory)
 
-        if smooth_window > 0:
+        if smooth_window > 5:
             smoothed_traj[:, 0] = self.savitzky_golay(smoothed_traj[:, 0], smooth_window, 3)
             smoothed_traj[:, 1] = self.savitzky_golay(smoothed_traj[:, 1], smooth_window, 3)
             smoothed_traj[:, 2] = self.savitzky_golay(smoothed_traj[:, 2], smooth_window, 3)
@@ -1412,7 +1478,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             all_distances = np.asarray(self.all_distances)
             max_distance = np.max(all_distances)
             min_distance = np.min(all_distances)
-            dist_from_cluster_zero = frechet_distance(traj, self.trajs[cluster_zero])
+            dist_from_cluster_zero = frechet_distance(traj, self.trajs[cluster_zero], self.config)
             dist_from_cluster_zero = np.clip(dist_from_cluster_zero, min_distance, max_distance)
             color = self.convert_to_rgb(min_distance, max_distance, dist_from_cluster_zero, default_colors)
 
@@ -1461,6 +1527,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             self.line_visuals.append(p1)
             self.colors.append(color)
             self.gradients.append(vertex_gradient)
+
         return p1
 
     def savitzky_golay(self, y, window_size, order, deriv=0, rate=1):
@@ -1550,11 +1617,13 @@ class ActionPlot(MplCanvas):
         MplCanvas.__init__(self, canvas)
 
     def plot(self, x, y):
+        num_actions = np.max(y) + 1
         colors = []
         for p in y:
             colors.append(self.cmap(p))
 
         self.axes.scatter(x, y, c=colors, s=10, marker='s')
+        self.axes.set_ylim(-1, num_actions)
         # self.axes.plot(x, y)
 
 class LegendPlot(MplCanvas):
@@ -1563,18 +1632,29 @@ class LegendPlot(MplCanvas):
         MplCanvas.__init__(self, canvas)
 
     def plot(self, x, y):
-        tick_colors = [self.cmap(p)[:3] for p in range(10)]
         num_actions = np.max(x) + 1
+        tick_colors = [self.cmap(p)[:3] for p in range(num_actions)]
         self.axes.scatter(np.ones(num_actions) * 100, np.arange(num_actions), c=tick_colors, s=10, marker='s')
 
         y_ticks = list(self.canvas.config['ACTIONS'].values())[:num_actions]
+        # y_ticks = ['Action_{}'.format(i) for i in range(num_actions)]
 
-        self.axes.set_yticks(np.arange(10))
+        self.axes.set_yticks(np.arange(num_actions))
         self.axes.set_yticklabels(y_ticks)
 
         self.axes.tick_params(axis='y', direction='in', labelsize=5, pad=-40)
         for ticklabel, tickcolor in zip(self.axes.get_yticklabels(), tick_colors):
             ticklabel.set_color(tickcolor)
+
+        self.axes.set_ylim(-1, num_actions)
+
+    def clear_plot(self):
+        self.axes.clear()
+        y_ticks = ['' for i in range(20)]
+
+        self.axes.set_yticks(np.arange(20))
+        self.axes.set_yticklabels(y_ticks)
+        self.draw()
 
 class WorldModelApplication(QDialog):
     def __init__(self, canvas, parent=None):
@@ -1708,13 +1788,13 @@ class WorldModelApplication(QDialog):
 
         self.filteringMean.valueChanged.connect(lambda x: self.filteringMeanLabel.setText(
             self.filteringMeanLabelText.format(
-                self.normalize_value(x))))
+                self.normalize_value(x, np.max(list(self.canvas.mean_moti_rews_dict.values()))))))
 
         self.clusterSize.valueChanged.connect(lambda x: self.clusterSizeLabel.setText(
             self.clusterSizeText.format(x)))
 
         canvas.filtering_mean_signal.connect(lambda x: {
-            self.filteringMean.setValue(self.de_normalize(x))
+            self.filteringMean.setValue(self.de_normalize(x, np.max(list(self.canvas.mean_moti_rews_dict.values()))))
         })
 
         canvas.cluster_size_signal.connect(lambda x: self.clusterSize.setValue(x))
@@ -1729,13 +1809,13 @@ class WorldModelApplication(QDialog):
         bottomLayout = QVBoxLayout()
         self.curiosityPlotWidget = CuriosityPlot(canvas)
         self.curiosityPlotWidget.setMinimumSize(0, 80)
-        self.curiosityPlotWidget.setMaximumSize(100000, 200)
+        self.curiosityPlotWidget.setMaximumSize(100000, 300)
 
         actionLayout = QHBoxLayout()
 
         self.actionPlotWidget = ActionPlot(canvas)
         self.actionPlotWidget.setMinimumSize(0, 80)
-        self.actionPlotWidget.setMaximumSize(100000, 200)
+        self.actionPlotWidget.setMaximumSize(100000, 300)
 
         self.legendPlotWidget = LegendPlot(canvas)
         self.legendPlotWidget.setMinimumSize(70, 80)
@@ -1845,7 +1925,12 @@ class WorldModelApplication(QDialog):
         if model_name == "" or self.last_model_name == model_name:
             return
 
-        self.load_thread = WorldModelApplication.MyThread(function=lambda : self.canvas.load_data(model_name))
+        self.load_thread = WorldModelApplication.MyThread(function=lambda : {
+            self.canvas.load_data(model_name),
+            self.legendPlotWidget.clear_plot(),
+            self.actionPlotWidget.clear_plot(),
+            self.curiosityPlotWidget.clear_plot()
+        })
         self.last_model_name = model_name
         self.canvas.start_loading()
         self.load_thread.start()
@@ -1924,11 +2009,11 @@ class WorldModelApplication(QDialog):
         #self.doubleTimeSlider.setEnable(True)
         self.smoothSlider.setEnabled(True)
 
-    def de_normalize(self, value):
-        return int(((value - 0.01) / (0.06 - 0.01)) * (100 - 0) + 0)
+    def de_normalize(self, value, max, min=0.01):
+        return int(((value - 0.01) / (max - min)) * (100 - 0) + 0)
 
-    def normalize_value(self, value):
-       return round(((value - 0) / (100 - 0)) * (0.06 - 0.01) + 0.01, 3)
+    def normalize_value(self, value, max, min=0.01):
+       return round(((value - 0) / (100 - 0)) * (max - min) + min, 3)
 
     def clear_tree_view(self):
         self.trajTreeModel.clear()
@@ -1936,8 +2021,10 @@ class WorldModelApplication(QDialog):
 
     def change_thr_filtering(self):
         # The value of the mean threshold in percentage
+        max = np.max(list(self.canvas.mean_moti_rews_dict.values()))
+        min = 0.01
         value = self.filteringMean.value()
-        value = ((value - 0) / (100 - 0)) * (0.06 - 0.01) + 0.01
+        value = ((value - 0) / (100 - 0)) * (max - min) + min
         self.clear_tree_view()
         canvas.mean_moti_thr = value
         canvas.cluster_size = self.clusterSize.value()
@@ -1954,7 +2041,6 @@ if __name__ == '__main__':
 
             qApp = QtWidgets.QApplication(sys.argv)
             plt.matplotlib.rcParams['figure.dpi'] = qApp.desktop().physicalDpiX()
-            # plt.matplotlib.rcParams['figure.dpi'] = 50
 
         # build canvas
         canvas = WorlModelCanvas(keys='interactive', show=True)
@@ -1963,7 +2049,6 @@ if __name__ == '__main__':
         view.camera.fov = 45
         view.camera.distance = 500
         view.camera.translate_speed = 100
-        view.camera.center = (255, 255, 60)
 
         canvas.set_camera(view.camera)
         canvas.set_view(view)
