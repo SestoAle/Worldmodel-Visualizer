@@ -43,7 +43,7 @@ EPSILON = sys.float_info.epsilon
 from PyQt5.QtCore import QThread, pyqtSignal
 import threading
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 physical_devices = tf.config.experimental.list_physical_devices('GPU')
 if len(physical_devices) > 0:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
@@ -61,8 +61,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
     def __init__(self, *args, **kwargs):
         self.current_line = None
         self.lines = None
-        self.line_visuals = []
-        self.lines_positions = []
+        self.traj_visuals = []
+        self.traj_positions = []
         self.im_rews = []
         self.index = -1
         self.timer = None
@@ -76,6 +76,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.colors = []
         self.gradients = []
         self.trajs = []
+        self.demonstrations = []
+        self.dem_visuals = []
         self.view = None
         self.default_colors = (0, 1, 1, 1)
         self.default_color = False
@@ -184,9 +186,9 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             if event.key.name == 'Down':
                 self.index += 1
 
-            self.index = np.clip(self.index, -1, len(self.line_visuals))
+            self.index = np.clip(self.index, -1, len(self.traj_visuals))
 
-            if self.index == -1 or self.index == len(self.line_visuals):
+            if self.index == -1 or self.index == len(self.traj_visuals):
                 self.one_line = False
                 self.hide_all_lines()
                 self.toggle_lines()
@@ -204,7 +206,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
         if event.key.name == 'P':
             plt.close('all')
-            if self.index == -1 or self.index == len(self.line_visuals):
+            if self.index == -1 or self.index == len(self.traj_visuals):
                 return
 
             if self.im_rews[self.index] is not None:
@@ -227,7 +229,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
     def plot_one_traj(self, line_index):
         self.delete_agent()
         self.hide_all_lines()
-        self.line_visuals[line_index].visible = True
+        self.traj_visuals[line_index].visible = True
         self.cluster_selected_signal.emit(line_index)
 
         if self.im_rews[line_index] is not None:
@@ -260,7 +262,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.plot_traj_signal.emit([plot_data, actions])
 
     def change_line_colors(self, mode='default'):
-        for i, v in enumerate(self.line_visuals):
+        for i, v in enumerate(self.traj_visuals):
             v.set_data(meshdata=v._meshdata)
             colors = np.ones((len(v._meshdata._vertices), 4))
             if mode == 'default':
@@ -272,18 +274,17 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             v._meshdata.set_vertex_colors(colors)
 
-
     def toggle_lines(self):
-        if self.index == -1 or self.index == len(self.line_visuals) or not self.one_line:
-            if self.line_visuals is not None and len(self.line_visuals) > 0:
-                for v in self.line_visuals:
+        if self.index == -1 or self.index == len(self.traj_visuals) or not self.one_line:
+            if self.traj_visuals is not None and len(self.traj_visuals) > 0:
+                for v in self.traj_visuals:
                     v.visible = not v.visible
         else:
-            self.line_visuals[self.index].visible = not self.line_visuals[self.index].visible
+            self.traj_visuals[self.index].visible = not self.traj_visuals[self.index].visible
 
     def hide_all_lines(self):
-        if self.line_visuals is not None and len(self.line_visuals) > 0:
-            for v in self.line_visuals:
+        if self.traj_visuals is not None and len(self.traj_visuals) > 0:
+            for v in self.traj_visuals:
                 v.visible = False
 
         if self.tmp_line is not None:
@@ -293,7 +294,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             self.tmp_im_rew = None
 
     def reset_index(self):
-        if self.index == -1 or self.index == len(self.line_visuals):
+        if self.index == -1 or self.index == len(self.traj_visuals):
             return
         if self.one_line:
             tmp_index = self.index
@@ -305,7 +306,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         else:
             self.hide_all_lines()
             plt.close('all')
-            self.line_visuals[self.index].visible = True
+            self.traj_visuals[self.index].visible = True
             self.one_line = True
 
     def on_mouse_press(self, event):
@@ -343,15 +344,23 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         del self.heatmap_in_time[:]
         self.heatmap_in_time = []
 
+        # del self.demonstrations[:]
+        self.demonstrations = []
+
+        for d in self.dem_visuals:
+            d.visible = False
+        del self.dem_visuals[:]
+        self.dem_visuals = []
+
         self.remove_lines()
 
     def remove_lines(self, only_visuals=False):
-        for v in self.line_visuals:
+        for v in self.traj_visuals:
             v.visible = False
             v.parent = None
 
-        del self.line_visuals[:]
-        self.line_visuals = []
+        del self.traj_visuals[:]
+        self.traj_visuals = []
 
         if self.tmp_line is not None:
             self.tmp_line.visible = False
@@ -383,11 +392,11 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.covermap = covermap
 
     def set_line_visuals(self, visual, positions, im_rews=None, actions=None, color=None):
-        self.line_visuals.append(visual)
+        self.traj_visuals.append(visual)
         self.im_rews.append(im_rews)
         self.actions.append(actions)
         self.colors.append(color)
-        self.lines_positions.append(positions)
+        self.traj_positions.append(positions)
 
     def random_color(self, value):
         return (np.random.uniform(), np.random.uniform(), np.random.uniform(), 1)
@@ -416,7 +425,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             return int(r1 + f * (r2 - r1)) / 255, int(g1 + f * (g2 - g1)) / 255, int(b1 + f * (b2 - b1)) / 255, 1
 
     def trajectories_to_pos_buffer(self, trajectories, rnd=None):
-        world_model_in_time = []
         pos_buffer = dict()
         rnd_buffer = dict()
         pos_buffer_in_time = dict()
@@ -439,6 +447,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         rmax_z = float(self.config['DEFAULT']['rmax_z'])
         tmin_z = float(self.config['DEFAULT']['tmin_z'])
         tmax_z = float(self.config['DEFAULT']['tmax_z'])
+
+        self.heatmap_in_time_discr = int(len(list(trajectories.values())) / 60)
 
         for traj in list(trajectories.values())[:]:
             count += 1
@@ -486,15 +496,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                         pos_buffer_in_time[pos_key] = 1
 
             if count % self.heatmap_in_time_discr == 0:
-                world_model_t = []
                 pos_buffers_in_time.append(pos_buffer_in_time)
                 pos_buffer_in_time = dict()
-                for k in pos_buffer.keys():
-                    k_value = list(map(float, k.split(" ")))
-                    if pos_buffer_is_grounded[k] == 1:
-                        heat = pos_buffer[k]
-                        world_model_t.append(k_value[:3] + [heat])
-                world_model_in_time.append(world_model_t)
 
         world_model = []
         for k in pos_buffer.keys():
@@ -528,7 +531,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         #         if pos_buffer_is_grounded[k] == 1:
         #             rnd_heatmap.append(list(s) + [v])
 
-        return pos_buffer, pos_buffer_alpha, world_model, world_model_in_time, pos_buffers_in_time, pos_buffer_is_grounded
+        return pos_buffer, pos_buffer_alpha, world_model, pos_buffers_in_time, pos_buffer_is_grounded
 
     def heatmap_in_time_given_tm(self, tm):
         for h in self.heatmap_in_time:
@@ -578,6 +581,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             heatmap.visible = False
             self.heatmap_in_time.append(heatmap)
+
 
 
     def plot_3d_map(self, world_model, color_index=3, percentile=95,
@@ -632,7 +636,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.heatmap.visible = False
         self.plot_3d_map(world_model, color_index=alpha + 3)
 
-
     def plot_3d_map_in_time(self, world_model_in_time):
         return
         min_perc = np.percentile(np.asarray(world_model_in_time[-1])[:, 3], 2)
@@ -666,11 +669,11 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             for h in self.heatmap_in_time:
                 h.visible = False
             index = np.clip(index, 0, len(self.heatmap_in_time) - 1)
-            # if index == len(self.heatmap_in_time):
-            #     self.heatmap.visible = True
-            #     self.heatmap_signal.emit(True)
-            # else:
-            self.heatmap_in_time[index].visible = True
+            if index == len(self.heatmap_in_time) - 1 and self.tm == 0:
+                self.heatmap.visible = True
+                self.heatmap_signal.emit(True)
+            else:
+                self.heatmap_in_time[index].visible = True
 
     def start_loading(self):
         self.loading.visible = True
@@ -728,6 +731,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             smoothed_traj[:, 0] = self.savitzky_golay(smoothed_traj[:, 0], self.smooth_window, 3)
             smoothed_traj[:, 1] = self.savitzky_golay(smoothed_traj[:, 1], self.smooth_window, 3)
             smoothed_traj[:, 2] = self.savitzky_golay(smoothed_traj[:, 2], self.smooth_window, 3)
+
+        print(smoothed_traj[index, :3])
 
         self.create_agent(smoothed_traj[index, :3])
 
@@ -799,61 +804,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             traj_to_observe = []
             episodes_to_observe = []
             acts_to_observe = []
-
-            # Goal Area 1
-            # desired_point_y = 1
-            # goal_area_x = 447
-            # goal_area_z = 466
-            # goal_area_y = 1
-            # goal_area_height = 20
-            # goal_area_width = 44
-
-            # Goal Area 2
-            # desired_point_y = 21
-            # goal_area_x = 22
-            # goal_area_z = 461
-            # goal_area_y = 21
-            # goal_area_height = 39
-            # goal_area_width = 66
-
-            # desired_point_y = 10
-            # goal_area_x = 95
-            # goal_area_z = 460
-            # goal_area_y = 21
-            # goal_area_height = 10
-            # goal_area_width = 10
-
-            # desired_point_y = 39
-            # goal_area_x = 0
-            # goal_area_z = 300
-            # goal_area_y = 21
-            # goal_area_height = 300
-            # goal_area_width = 15
-
-            # Goal Area 3
-            # desired_point_y = 28
-            # goal_area_x = 35
-            # goal_area_z = 18
-            # goal_area_y = 28
-            # goal_area_height = 44
-            # goal_area_width = 44
-
-            # Goal Area 4
-            # desired_point_y = 1
-            # goal_area_x = 442
-            # goal_area_z = 38
-            # goal_area_y = 1
-            # goal_area_height = 65
-            # goal_area_width = 46
-
-            # desired_point_y = 21
-            # goal_area_x = 454
-            # goal_area_z = 103
-            # goal_area_y = 21
-            # goal_area_height = 5
-            # goal_area_width = 5
-
-            # threshold = 4
 
             desired_point_y = float(self.config['GOAL']['area_y'])
             goal_area_x = float(self.config['GOAL']['area_x'])
@@ -1037,6 +987,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 mean_to_observe.append(v)
                 sum_to_observe.append(sum_moti_rews_dict[k])
 
+        print(self.mean_moti_thr)
+
         moti_to_observe = np.reshape(moti_to_observe, -1)
         mean_to_observe = np.asarray(mean_to_observe)
         sum_to_observe = np.asarray(sum_to_observe)
@@ -1070,44 +1022,10 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 states_batch.append(state)
 
             im_rew = motivation.eval(states_batch)
-            # all_im_rews.extend(im_rew)
-            # all_points.extend([k['global_in'] for k in states_batch])
             # im_rew = savitzky_golay(im_rew, 51, 3)
             # im_rew = (im_rew - np.min(step_moti_rews)) / (np.max(step_moti_rews) - np.min(step_moti_rews))
             all_normalized_im_rews.append(im_rew)
             all_sum_fitlered_im_rews.append(np.sum(im_rew))
-
-        # all_points = np.asarray(all_points)
-        # all_im_rews = np.asarray(all_im_rews)
-        # indices = np.where(all_im_rews > np.asarray(0.08))
-        # indices = np.reshape(indices, -1)
-        # points_to_plot = deepcopy(all_points)
-        # points_to_plot = points_to_plot[indices]
-        #
-        # points_to_plot[:, 0] = ((points_to_plot[:, 0] + 1) / 2) * 500
-        # points_to_plot[:, 1] = ((points_to_plot[:, 1] + 1) / 2) * 500
-        # points_to_plot[:, 2] = ((points_to_plot[:, 2] + 1) / 2) * 60
-        # points_to_plot = points_to_plot.astype(int)
-        # Scatter3D = scene.visuals.create_visual_node(visuals.MarkersVisual)
-        # covermap = Scatter3D(parent=view.scene)
-        # covermap.set_gl_state('additive', blend=True, depth_test=True)
-        # covermap.set_data(points_to_plot[:, :3], face_color=(0, 1, 0, 1), symbol='o', size=2, edge_width=0,
-        #                   edge_color=(0, 1, 0, 1), scaling=True)
-        #
-        # indices = np.where(all_points[:, 6] > np.asarray(0.5))
-        # indices = np.reshape(indices, -1)
-        # points_to_plot = deepcopy(all_points)
-        # points_to_plot = points_to_plot[indices]
-        #
-        # points_to_plot[:, 0] = ((points_to_plot[:, 0] + 1) / 2) * 500
-        # points_to_plot[:, 1] = ((points_to_plot[:, 1] + 1) / 2) * 500
-        # points_to_plot[:, 2] = ((points_to_plot[:, 2] + 1) / 2) * 60
-        # points_to_plot = points_to_plot.astype(int)
-        # Scatter3D = scene.visuals.create_visual_node(visuals.MarkersVisual)
-        # covermap = Scatter3D(parent=view.scene)
-        # covermap.set_gl_state('additive', blend=True, depth_test=True)
-        # covermap.set_data(points_to_plot[:, :3], face_color=(1, 0, 0, 1), symbol='o', size=2, edge_width=0,
-        #                   edge_color=(1, 0, 0, 1), scaling=True)
 
         # if False:
         if len(all_normalized_im_rews) > self.cluster_size:
@@ -1120,7 +1038,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             cluster_indices = np.arange(len(all_normalized_im_rews))
             centroids = all_sum_fitlered_im_rews
             cluster_labels = np.asarray([])
-
 
         self.unfreeze()
         self.centroids = centroids
@@ -1136,12 +1053,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             new_sum_moti_rews_dict[a] = mean_to_observe[i]
             new_mean_moti_rews_dict[a] = sum_to_observe[i]
 
-        # self.sum_moti_rews_dict = new_sum_moti_rews_dict
-        # self.mean_moti_rews_dict = new_mean_moti_rews_dict
-
-        # for i, traj, im_rews, key in zip(range(len(cluster_indices)),
-        #                                  traj_to_observe[idxs_to_observe][cluster_indices],
-        #                                  all_normalized_im_rews[cluster_indices], episodes_to_observe):
         for i, traj, im_rews, actions in zip(range(len(cluster_indices)),
                                     traj_to_observe[cluster_indices],
                                     all_normalized_im_rews[cluster_indices],
@@ -1214,15 +1125,13 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
                 buffer_alpha = pickle.load(f)
             with open('{}/{}/{}_worldmodel.npy'.format(folder, model_name, model_name), 'rb') as f:
                 world_model = np.load(f, allow_pickle=True)
-            with open('{}/{}/{}_worldmodel_time.npy'.format(folder, model_name, model_name), 'rb') as f:
-                world_model_in_time = np.load(f, allow_pickle=True)
             with open('{}/{}/{}_stats.pickle'.format(folder, model_name, model_name), 'rb') as f:
                 stats = pickle.load(f)
-            return buffer, buffer_alpha, world_model, stats, world_model_in_time
+            return buffer, buffer_alpha, world_model, stats
 
         except Exception as e:
             print(e)
-            return None, None, None, None, None
+            return None, None, None, None
 
     def load_precomputed_time_models(self, model_name, folder='arrays'):
         try:
@@ -1235,7 +1144,25 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             print(e)
             return None, None
 
-    def save_precomputed_models(self, model_name, buffer, buffer_alpha, world_model, stats, world_model_in_time=None,
+    def load_demonstrations(self, model_name, folder='arrays'):
+        try:
+            with open('{}/{}/{}.pkl'.format(folder, model_name, model_name), 'rb') as f:
+                raw_demonstrations = pickle.load(f)
+
+            demonstrations = []
+            for i, ep_len in enumerate(raw_demonstrations['episode_len']):
+                new_dem = []
+                start = np.sum(raw_demonstrations['episode_len'][:i])
+                for s in range(ep_len):
+                    new_dem.append(raw_demonstrations['obs'][start + s]['global_in'])
+                new_dem = np.asarray(new_dem)
+                demonstrations.append(new_dem)
+            demonstrations = np.asarray(demonstrations)
+            return demonstrations
+        except Exception as e:
+            return None
+
+    def save_precomputed_models(self, model_name, buffer, buffer_alpha, world_model, stats,
                                 folder='arrays'):
         with open('{}/{}/{}_buffer.pickle'.format(folder, model_name, model_name), 'wb') as f:
             pickle.dump(buffer, f)
@@ -1243,8 +1170,6 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             pickle.dump(buffer_alpha, f)
         with open('{}/{}/{}_worldmodel.npy'.format(folder, model_name, model_name), 'wb') as f:
             np.save(f, world_model)
-        with open('{}/{}/{}_worldmodel_time.npy'.format(folder, model_name, model_name), 'wb') as f:
-            np.save(f, world_model_in_time)
         with open('{}/{}/{}_stats.pickle'.format(folder, model_name, model_name), 'wb') as f:
             pickle.dump(stats, f)
 
@@ -1330,7 +1255,13 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             self.config['FILTERING'] = {
                 'mean_moti_thr': 0.04,
-                'sum_moti_thr': 16
+                'sum_moti_thr': 16,
+                "cluster_size": 20
+            }
+
+            self.config['MODEL'] = {
+                'architecture': 'architecture',
+                'filler': 0
             }
 
             with open('arrays/{}/{}.ini'.format(model_name, model_name), 'w') as configfile:
@@ -1340,6 +1271,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
         self.load_config(model_name)
         self.mean_moti_thr = float(self.config['FILTERING']['mean_moti_thr'])
+        self.cluster_size = int(self.config['FILTERING']['cluster_size'])
         self.sum_moti_thr = float(self.config['FILTERING']['sum_moti_thr'])
         view.camera.center = (((float(self.config['DEFAULT']['tmax_x']) - float(self.config['DEFAULT']['tmin_x'])) / 2) + float(self.config['DEFAULT']['tmin_x']),
                               ((float(self.config['DEFAULT']['tmax_y']) - float(self.config['DEFAULT']['tmin_y'])) / 2) + float(self.config['DEFAULT']['tmin_y']),
@@ -1348,7 +1280,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.remove_maps()
         motivation = self.load_motivation(model_name)
 
-        buffer, buffer_alpha, world_model, stats, world_model_in_time = self.load_precomputed_models(model_name)
+        buffer, buffer_alpha, world_model, stats = self.load_precomputed_models(model_name)
         pos_buffers_in_time, pos_buffer_is_grounded = self.load_precomputed_time_models(model_name)
         unfiltered_trajs, unfiltered_actions, unfiltered_moti = self.load_unfiltered_trajs(model_name)
 
@@ -1359,12 +1291,12 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             trajectories, actions = self.load_data_from_disk(model_name)
 
-            buffer, buffer_alpha, world_model, world_model_in_time, pos_buffers_in_time, pos_buffer_is_grounded\
+            buffer, buffer_alpha, world_model, pos_buffers_in_time, pos_buffer_is_grounded\
                 = self.trajectories_to_pos_buffer(trajectories, rnd=motivation)
             world_model = np.asarray(world_model)
             stats = dict(episodes=len(trajectories))
 
-            self.save_precomputed_models(model_name, buffer, buffer_alpha, world_model, stats, world_model_in_time)
+            self.save_precomputed_models(model_name, buffer, buffer_alpha, world_model, stats)
             self.save_precomputed_time_models(model_name, pos_buffers_in_time, pos_buffer_is_grounded)
 
             unfiltered_trajs = None
@@ -1378,9 +1310,9 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         self.model_name = model_name
         self.freeze()
 
-        self.in_time_signal.emit(len(world_model_in_time))
+        self.heatmap_in_time_discr = int(stats['episodes'] / len(pos_buffers_in_time))
+        self.in_time_signal.emit(len(pos_buffers_in_time))
         self.plot_3d_map(world_model)
-        self.plot_3d_map_in_time(world_model_in_time)
         self.heatmap_in_time_given_tm(0)
 
         if self.trajectory_visualizer:
@@ -1410,6 +1342,11 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             self.cluster_size_signal.emit(self.cluster_size)
             self.filtering_trajectory()
 
+            # Print demonstrations
+            self.demonstrations = self.load_demonstrations(model_name)
+            for d in self.demonstrations:
+                self.print_3d_dem(d)
+
         self.change_text(model_name, len(list(buffer.keys())), stats['episodes'])
         self.stop_loading()
         self.load_ending_signal.emit(True)
@@ -1436,6 +1373,45 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             motivation = None
             print(e)
         return motivation
+
+    # TODO: make a generic method for print a 3D traj
+    def print_3d_dem(self, dem, with_denorm=True):
+        if with_denorm:
+            dem[:, 0] = self.normalize(np.asarray(dem[:, 0]),
+                                                 self.config['DEFAULT']['rmin_x'],
+                                                 self.config['DEFAULT']['rmax_x'],
+                                                 self.config['DEFAULT']['tmin_x'],
+                                                 self.config['DEFAULT']['tmax_x'])
+            dem[:, 1] = self.normalize(np.asarray(dem[:, 1]),
+                                                 self.config['DEFAULT']['rmin_y'],
+                                                 self.config['DEFAULT']['rmax_y'],
+                                                 self.config['DEFAULT']['tmin_y'],
+                                                 self.config['DEFAULT']['tmax_y'])
+            dem[:, 2] = self.normalize(np.asarray(dem[:, 2]),
+                                                 self.config['DEFAULT']['rmin_z'],
+                                                 self.config['DEFAULT']['rmax_z'],
+                                                 self.config['DEFAULT']['tmin_z'],
+                                                 self.config['DEFAULT']['tmax_z'])
+
+        Tube3D = scene.visuals.create_visual_node(visuals.TubeVisual)
+
+        noise = np.random.uniform(1e-5, 1e-7, (len(dem), 3))
+
+        p1 = Tube3D(parent=view.scene, points=dem[:, :3] + noise, color=self.default_colors, radius=0.5)
+        p1.shading_filter.enabled = False
+        p1.visible = False
+        self.dem_visuals.append(p1)
+
+    def show_demonstrations(self):
+        if self.dem_visuals == None or len(self.dem_visuals) == 0:
+            return
+
+        if self.dem_visuals[0].visible:
+            for d in self.dem_visuals:
+                d.visible = False
+        else:
+            for d in self.dem_visuals:
+                d.visible = True
 
     def print_3d_traj(self, traj, index=None, with_denorm=True, max=None, min=None, tmp_line=False, im_rews=None,
                       color=None):
@@ -1529,7 +1505,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
             self.tmp_traj = traj
             self.tmp_im_rew = im_rews
         else:
-            self.line_visuals.append(p1)
+            self.traj_visuals.append(p1)
             self.colors.append(color)
             self.gradients.append(vertex_gradient)
 
@@ -1698,13 +1674,13 @@ class WorldModelApplication(QDialog):
         midLeftLayout = QGridLayout()
 
         trajsLayout = QVBoxLayout()
-        self.timeLabelText = "&Heatmap in time: {}"
+        self.timeLabelText = "&Heatmap in time: {} - {}"
         self.timeLabel = QLabel()
         self.timeSlider = QSlider(Qt.Horizontal)
         self.timeLabel.setBuddy(self.timeSlider)
         self.timeSlider.setMaximum(100)
         self.timeSlider.setValue(0)
-        self.timeLabel.setText(self.timeLabelText.format(self.timeSlider.value() * self.canvas.heatmap_in_time_discr))
+        self.timeLabel.setText(self.timeLabelText.format(0, self.timeSlider.value() * self.canvas.heatmap_in_time_discr))
         self.timeSlider.setMinimumSize(200, 0)
 
         self.doubleTimeSlider = QRangeSlider(Qt.Horizontal)
@@ -1715,6 +1691,7 @@ class WorldModelApplication(QDialog):
         self.doubleTimeSlider.setMinimumSize(200, 0)
 
         self.doubleTimeSlider.sliderReleased.connect(self.time_slider_released)
+        self.doubleTimeSlider.valueChanged.connect(self.time_slider_changed)
 
         self.alphaCombo = QComboBox()
         self.alphaLabel = QLabel('&alpha:')
@@ -1745,8 +1722,16 @@ class WorldModelApplication(QDialog):
         self.canvas.traj_list_signal.connect(self.populate_tree_view)
         self.canvas.cluster_selected_signal.connect(self.tree_view_set_index)
 
+        self.demTrajView = QCheckBox('&Demonstrations')
+        demBox = QHBoxLayout()
+        demBox.addWidget(self.demTrajView)
+
+        self.demTrajView.toggled.connect(lambda x: self.canvas.show_demonstrations())
+
+        demBox.addStretch(1)
+
         trajsLayout.addWidget(self.timeLabel)
-        trajsLayout.addWidget(self.timeSlider)
+        # trajsLayout.addWidget(self.timeSlider)
         trajsLayout.addWidget(self.doubleTimeSlider)
         trajsLayout.addWidget(self.alphaLabel)
         trajsLayout.addWidget(self.alphaCombo)
@@ -1754,6 +1739,8 @@ class WorldModelApplication(QDialog):
         trajsLayout.addWidget(self.smoothSlider)
         trajsLayout.addWidget(self.trajTreeViewLabel)
         trajsLayout.addWidget(self.trajTreeView)
+        trajsLayout.addLayout(demBox)
+
         trajsLayout.addStretch(1)
         trajsLayout.setContentsMargins(20, 20, 20, 20)
         self.timeSlider.valueChanged.connect(self.time_slider_changed)
@@ -1762,7 +1749,7 @@ class WorldModelApplication(QDialog):
             self.timeSlider.setMaximum(x),
             self.doubleTimeSlider.setMaximum(x),
             self.timeSlider.setValue(x),
-            self.timeLabel.setText(self.timeLabelText.format(x * self.canvas.heatmap_in_time_discr)),
+            self.timeLabel.setText(self.timeLabelText.format(0, x * self.canvas.heatmap_in_time_discr)),
             self.timeSlider.blockSignals(False)})
 
         controlLayout = QVBoxLayout()
@@ -1812,20 +1799,29 @@ class WorldModelApplication(QDialog):
         midLayout.addLayout(midLeftLayout)
 
         bottomLayout = QVBoxLayout()
+
+        curiosityLayout = QHBoxLayout()
+        curiosityLayout.setSpacing(0)
+
+
         self.curiosityPlotWidget = CuriosityPlot(canvas)
         self.curiosityPlotWidget.setMinimumSize(0, 80)
         self.curiosityPlotWidget.setMaximumSize(100000, 300)
 
+        self.legendCuriosityPlotWidget = LegendPlot(canvas)
+        self.legendCuriosityPlotWidget.setMinimumSize(70, 80)
+        self.legendCuriosityPlotWidget.setMaximumSize(70, 300)
+
         actionLayout = QHBoxLayout()
+        actionLayout.setSpacing(0)
 
         self.actionPlotWidget = ActionPlot(canvas)
         self.actionPlotWidget.setMinimumSize(0, 80)
         self.actionPlotWidget.setMaximumSize(100000, 300)
 
-        self.legendPlotWidget = LegendPlot(canvas)
-        self.legendPlotWidget.setMinimumSize(70, 80)
-        self.legendPlotWidget.setMaximumSize(70, 200)
-        actionLayout.setSpacing(0)
+        self.legendActionPlotWidget = LegendPlot(canvas)
+        self.legendActionPlotWidget.setMinimumSize(70, 80)
+        self.legendActionPlotWidget.setMaximumSize(70, 300)
 
         self.curiosityPlotWidget.hover_signal.connect(lambda x: {
             self.actionPlotWidget.catch_signal(x),
@@ -1838,9 +1834,12 @@ class WorldModelApplication(QDialog):
 
         self.canvas.plot_traj_signal.connect(self.plot_traj_data)
 
-        actionLayout.addWidget(self.legendPlotWidget)
+        actionLayout.addWidget(self.legendActionPlotWidget)
         actionLayout.addWidget(self.actionPlotWidget)
-        bottomLayout.addWidget(self.curiosityPlotWidget)
+
+        curiosityLayout.addWidget(self.legendCuriosityPlotWidget)
+        curiosityLayout.addWidget(self.curiosityPlotWidget)
+        bottomLayout.addLayout(curiosityLayout)
         bottomLayout.addLayout(actionLayout)
         # bottomLayout.addStretch(1)
 
@@ -1932,7 +1931,7 @@ class WorldModelApplication(QDialog):
 
         self.load_thread = WorldModelApplication.MyThread(function=lambda : {
             self.canvas.load_data(model_name),
-            self.legendPlotWidget.clear_plot(),
+            self.legendActionPlotWidget.clear_plot(),
             self.actionPlotWidget.clear_plot(),
             self.curiosityPlotWidget.clear_plot()
         })
@@ -1946,30 +1945,42 @@ class WorldModelApplication(QDialog):
         if len(x) == 0:
             self.curiosityPlotWidget.clear_plot()
             self.actionPlotWidget.clear_plot()
-            self.legendPlotWidget.clear_plot()
+            self.legendActionPlotWidget.clear_plot()
         else:
             curiosity = x[0]
             actions = x[1]
             self.curiosityPlotWidget.show_data(np.arange(len(curiosity)), curiosity)
             self.actionPlotWidget.show_data(np.arange(len(actions)), actions)
-            self.legendPlotWidget.show_data(actions, None)
+            self.legendActionPlotWidget.show_data(actions, None)
 
     def alpha_name_changed(self, value):
         if value == 'all':
             value = 0
             self.timeSlider.setEnabled(True)
+            self.doubleTimeSlider.setEnabled(True)
             self.timeSlider.blockSignals(True)
             self.doubleTimeSlider.blockSignals(True)
-            self.timeSlider.setValue(self.timeSlider.maximum())
+
             self.doubleTimeSlider.setValue([self.doubleTimeSlider.value()[0], self.doubleTimeSlider.maximum()])
+            # tm = self.doubleTimeSlider.value()[0]
+            # tn = self.doubleTimeSlider.maximum()
+            self.canvas.plot_3D_alpha_map(self.canvas.world_model, value)
+            # self.canvas.show_heatmap_in_time(np.clip(tn - tm, 0, self.timeSlider.maximum()))
+            #
+            # tn = int(tn * self.canvas.heatmap_in_time_discr)
+            # tm = int(tm * self.canvas.heatmap_in_time_discr)
+            # self.timeLabel.setText(self.timeLabelText.format(tm, tn))
+            self.time_slider_released()
+
             self.timeSlider.blockSignals(False)
             self.doubleTimeSlider.blockSignals(False)
         else:
             self.timeSlider.setEnabled(False)
+            self.doubleTimeSlider.setEnabled(False)
             value = int(float(value) * 10) + 1
-        self.canvas.plot_3D_alpha_map(self.canvas.world_model, value)
+            self.canvas.plot_3D_alpha_map(self.canvas.world_model, value)
 
-    def time_slider_changed(self, value):
+    def _time_slider_changed(self, value):
         if value != self.timeSlider.maximum():
             self.heatmapCheck.setEnabled(False)
         else:
@@ -1977,6 +1988,26 @@ class WorldModelApplication(QDialog):
         self.canvas.show_heatmap_in_time(np.clip(value, 0, self.timeSlider.maximum()))
         value = value * self.canvas.heatmap_in_time_discr
         self.timeLabel.setText(self.timeLabelText.format(value))
+
+    def time_slider_changed(self):
+        if self.canvas.heatmap is None:
+            return
+        values = self.doubleTimeSlider.value()
+        tm = values[0]
+        tn = values[1]
+
+        if tn != self.timeSlider.maximum() or tm != 0:
+            self.heatmapCheck.setEnabled(False)
+        else:
+            self.heatmapCheck.setEnabled(True)
+
+        if tm != self.canvas.tm:
+            return
+
+        self.canvas.show_heatmap_in_time(np.clip(tn - tm, 0, self.timeSlider.maximum()))
+        tn = tn * self.canvas.heatmap_in_time_discr
+        tm = tm * self.canvas.heatmap_in_time_discr
+        self.timeLabel.setText(self.timeLabelText.format(tm, tn))
 
     def time_slider_released(self):
         if self.canvas.heatmap is None:
@@ -1989,7 +2020,8 @@ class WorldModelApplication(QDialog):
             self.canvas.tm = tm
         self.canvas.show_heatmap_in_time(np.clip(tn - tm, 0, self.timeSlider.maximum()))
         tn = tn * self.canvas.heatmap_in_time_discr
-        self.timeLabel.setText(self.timeLabelText.format(tn))
+        tm = tm * self.canvas.heatmap_in_time_discr
+        self.timeLabel.setText(self.timeLabelText.format(tm, tn))
 
     def disable_inputs(self):
         self.modelNameCombo.setEnabled(False)
@@ -1999,9 +2031,10 @@ class WorldModelApplication(QDialog):
         self.filteringButton.setEnabled(False)
         self.timeSlider.setEnabled(False)
         self.alphaCombo.setEnabled(False)
-        #self.doubleTimeSlider.setEnable(False)
+        self.doubleTimeSlider.setEnabled(False)
         self.smoothSlider.setEnabled(False)
         self.clear_tree_view()
+        self.demTrajView.setEnabled(False)
 
     def enable_inputs(self):
         self.modelNameCombo.setEnabled(True)
@@ -2011,8 +2044,9 @@ class WorldModelApplication(QDialog):
         self.filteringButton.setEnabled(True)
         self.timeSlider.setEnabled(True)
         self.alphaCombo.setEnabled(True)
-        #self.doubleTimeSlider.setEnable(True)
+        self.doubleTimeSlider.setEnabled(True)
         self.smoothSlider.setEnabled(True)
+        self.demTrajView.setEnabled(True)
 
     def de_normalize(self, value, max, min=0.01):
         return int(((value - 0.01) / (max - min)) * (100 - 0) + 0)
@@ -2079,4 +2113,6 @@ if __name__ == '__main__':
         app = QApplication(sys.argv)
         gallery = WorldModelApplication(canvas)
         gallery.show()
+        gallery.setWindowFlags(Qt.WindowCloseButtonHint | Qt.WindowType_Mask)
+        gallery.showFullScreen()
         sys.exit(app.exec_())
