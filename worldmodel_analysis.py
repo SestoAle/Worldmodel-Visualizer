@@ -450,7 +450,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
         self.heatmap_in_time_discr = int(len(list(trajectories.values())) / 60)
 
-        for traj in list(trajectories.values())[:]:
+        for traj in list(trajectories.values())[:30000]:
             count += 1
             for state in traj:
                 position = np.asarray(state[:3])
@@ -710,6 +710,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
     def move_agent_at_traj_index(self, index):
         self.delete_agent()
         index = int(index)
+        print(index)
+        input('...')
         smoothed_traj = deepcopy(self.trajs[self.index][:, :3])
         smoothed_traj[:, 0] = self.normalize(np.asarray(smoothed_traj[:, 0]),
                                      self.config['DEFAULT']['rmin_x'],
@@ -842,8 +844,8 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             # Get only those trajectories that touch the desired points
             for keys, traj in zip(list(trajectories.keys())[:], list(trajectories.values())[:]):
-                if traj[0][-1] > 0.5:
-                    continue
+                # if traj[0][-1] > 0.5:
+                #     continue
                 # to_observe = False
                 # for point in traj:
                 #     de_point = np.zeros(3)
@@ -966,13 +968,16 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
         sum_moti_rews = list(sum_moti_rews_dict.values())
 
         print(" ")
-        print("Max mean moti: {}".format(np.max(mean_moti_rews)))
-        print("Mean mean moti: {}".format(np.mean(mean_moti_rews)))
-        print("Min mean moti: {}".format(np.min(mean_moti_rews)))
-        print(" ")
-        print("Max sum moti: {}".format(np.max(sum_moti_rews)))
-        print("Mean sum moti: {}".format(np.mean(sum_moti_rews)))
-        print("Min sum moti: {}".format(np.min(sum_moti_rews)))
+        try:
+            print("Max mean moti: {}".format(np.max(mean_moti_rews)))
+            print("Mean mean moti: {}".format(np.mean(mean_moti_rews)))
+            print("Min mean moti: {}".format(np.min(mean_moti_rews)))
+            print(" ")
+            print("Max sum moti: {}".format(np.max(sum_moti_rews)))
+            print("Mean sum moti: {}".format(np.mean(sum_moti_rews)))
+            print("Min sum moti: {}".format(np.min(sum_moti_rews)))
+        except Exception as e:
+            print("Nothing")
         print(" ")
 
         # im_heatmap = []
@@ -1291,7 +1296,7 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             trajectories, actions = self.load_data_from_disk(model_name)
 
-            buffer, buffer_alpha, world_model, pos_buffers_in_time, pos_buffer_is_grounded\
+            buffer, buffer_alpha, world_model, pos_buffers_in_time, pos_buffer_is_grounded \
                 = self.trajectories_to_pos_buffer(trajectories, rnd=motivation)
             world_model = np.asarray(world_model)
             stats = dict(episodes=len(trajectories))
@@ -1344,8 +1349,10 @@ class WorlModelCanvas(QObject, scene.SceneCanvas):
 
             # Print demonstrations
             self.demonstrations = self.load_demonstrations(model_name)
-            for d in self.demonstrations:
-                self.print_3d_dem(d)
+            if self.demonstrations is not None:
+                for d in self.demonstrations:
+                    self.print_3d_dem(d)
+
 
         self.change_text(model_name, len(list(buffer.keys())), stats['episodes'])
         self.stop_loading()
@@ -1785,9 +1792,15 @@ class WorldModelApplication(QDialog):
         self.clusterSize.valueChanged.connect(lambda x: self.clusterSizeLabel.setText(
             self.clusterSizeText.format(x)))
 
-        canvas.filtering_mean_signal.connect(lambda x: {
-            self.filteringMean.setValue(self.de_normalize(x, np.max(list(self.canvas.mean_moti_rews_dict.values()))))
-        })
+        try:
+            canvas.filtering_mean_signal.connect(lambda x: {
+                self.filteringMean.setValue(self.de_normalize(x, np.max(list(self.canvas.mean_moti_rews_dict.values()))))
+            })
+        except:
+            canvas.filtering_mean_signal.connect(lambda x: {
+                self.filteringMean.setValue(
+                    self.de_normalize(x, 1))
+            })
 
         canvas.cluster_size_signal.connect(lambda x: self.clusterSize.setValue(x))
 
